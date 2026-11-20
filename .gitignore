@@ -43,3 +43,6 @@ next-env.d.ts
 
 # local AI-agent / editor config
 .claude/
+
+# generated Prisma client (rebuilt by `npm install` / `npm run db:generate`)
+/src/generated/
