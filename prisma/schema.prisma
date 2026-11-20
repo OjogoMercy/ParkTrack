@@ -1,0 +1,745 @@
+// ParkTrack database schema (PRD v1.1 §12 + additions from the designs,
+// listed in docs/scopes/01-foundation.md "Schema additions").
+//
+// Conventions
+// - Money is ALWAYS integer kobo (₦1 = 100 kobo). Field names end in "Kobo".
+// - Rates and shares are basis points ("Bps"): 6000 = 60%, 125 = 1.25%.
+// - Table names are snake_case (@@map); columns are camelCase.
+// - parcel_events and ledger_entries are append-only (enforced by triggers in
+//   the first migration). Change state by inserting rows, never by editing.
+// - Parcel status changes only through @/server/parcels transition() (Scope 03).
+// - QR codes only ever carry random tokens: Parcel.publicId, Manifest.token,
+//   Park.collectionQrToken, Handshake.agentQrToken.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+/// A vendor is a SENDER with a VendorProfile, not a separate role.
+enum Role {
+  SENDER
+  AGENT
+  DRIVER
+  PARK_ADMIN
+  PLATFORM_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DEACTIVATED
+}
+
+enum ParkStatus {
+  ONBOARDING
+  LIVE
+  SUSPENDED
+}
+
+enum Language {
+  EN
+  PCM // Nigerian Pidgin
+}
+
+enum NotificationChannel {
+  WHATSAPP
+  SMS
+  CONSOLE // NOTIFY_MODE=console in development
+}
+
+enum SizeClass {
+  S
+  M
+  L
+}
+
+enum DeliveryMode {
+  ROADSIDE
+  PARK
+}
+
+/// PRD §8. Only transitions listed in src/contracts/states.ts are allowed.
+enum ParcelStatus {
+  DRAFT
+  AWAITING_DROPOFF
+  RECEIVED_AT_ORIGIN
+  ASSIGNED
+  IN_TRANSIT
+  DELIVERED_ROADSIDE
+  ARRIVED
+  COLLECTED
+  SETTLED
+  UNCLAIMED
+  RETURNED
+  DISPUTED
+  RESOLVED
+  CANCELLED
+}
+
+enum CreatedBy {
+  SENDER
+  AGENT
+}
+
+enum HandshakeMethod {
+  AGENT_SCAN
+  SENDER_SCAN
+  SMS_CODE
+}
+
+enum ParcelEventType {
+  CREATED
+  PAID
+  HANDSHAKE
+  PHOTO
+  DROPOFF
+  ASSIGN
+  UNASSIGN
+  ACCEPT
+  ROADSIDE_DELIVERED
+  ROADSIDE_MISSED
+  MANIFEST_RECEIVED
+  TICK_OFF
+  MISSING
+  DAMAGED
+  COLLECTION_CODE_ISSUED
+  COLLECTED
+  SETTLED
+  UNCLAIMED
+  RETURNED
+  DISPUTED
+  RESOLVED
+  CANCELLED
+  NOTE
+}
+
+enum TripStatus {
+  LOADING // parcels being assigned, not yet accepted
+  IN_TRANSIT // driver tapped Accept load
+  ARRIVED
+  CLOSED
+}
+
+enum CodePurpose {
+  ROADSIDE
+  COUNTER
+}
+
+enum CollectorKind {
+  RECIPIENT
+  DELEGATE
+}
+
+enum PaymentPurpose {
+  SHIPPING
+  TOP_UP
+  INSURANCE
+  POD
+  STORAGE
+  REFUND
+}
+
+enum PaymentStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+/// HELD holds money between payment and settlement (append-only friendly:
+/// settlement writes new entries moving it out of HELD).
+enum LedgerAccount {
+  HELD
+  VENDOR
+  DRIVER
+  PARK
+  PLATFORM
+  INSURER
+  SENDER
+}
+
+enum PayoutStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum DisputeType {
+  DAMAGED
+  MISSING
+  WRONG_ITEM
+  OVERCHARGED
+}
+
+enum DisputeStatus {
+  OPEN
+  RESOLVED
+  REJECTED
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+// ─── Platform and parks ─────────────────────────────────────────────────────
+
+/// Single row (id = 1): platform-wide fees and limits.
+model Settings {
+  id              Int      @id @default(1)
+  platformFeeKobo Int      @default(15000) // ₦150 per parcel
+  podFeeBps       Int      @default(125) // 1.25% of pay-on-delivery
+  podLimitKobo    Int      @default(20000000) // ₦200,000 per parcel (pilot)
+  updatedAt       DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model Park {
+  id                   String     @id @default(cuid())
+  /// Subdomain, e.g. "ogbomoso" → ogbomoso.parktrack.ng. Reserved: www, app, admin, api.
+  slug                 String     @unique
+  name                 String
+  logoUrl              String?
+  city                 String
+  state                String
+  address              String
+  lat                  Float?
+  lng                  Float?
+  /// e.g. { "mon": ["06:00", "19:00"], ... }
+  openingHours         Json
+  counterLocationText  String?
+  storageWindowHours   Int        @default(24)
+  maxHoldDays          Int        @default(7)
+  dropoffDeadlineHours Int        @default(48)
+  /// Fixed token printed on the counter poster (PARK-4).
+  collectionQrToken    String     @unique
+  /// Driver's share of the fare; the park keeps the rest (designs: 60/40).
+  driverShareBps       Int        @default(6000)
+  /// Park's share of storage fees; the platform keeps the rest (designs: 80/20).
+  storageParkShareBps  Int        @default(8000)
+  status               ParkStatus @default(ONBOARDING)
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  routesFrom        Route[]          @relation("RouteOrigin")
+  routesTo          Route[]          @relation("RouteDestination")
+  storageRates      StorageRate[]
+  staff             User[]           @relation("ParkStaff")
+  signups           User[]           @relation("SignupPark")
+  parcelsFrom       Parcel[]         @relation("ParcelOrigin")
+  parcelsTo         Parcel[]         @relation("ParcelDestination")
+  tripsFrom         Trip[]           @relation("TripOrigin")
+  tripsTo           Trip[]           @relation("TripDestination")
+  manifests         Manifest[]
+  invites           StaffInvite[]
+  savedByRecipients SavedRecipient[]
+
+  @@map("parks")
+}
+
+model Route {
+  id                String   @id @default(cuid())
+  originParkId      String
+  destinationParkId String
+  typicalMinutes    Int
+  fareSmallKobo     Int
+  fareMediumKobo    Int
+  fareLargeKobo     Int
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  originPark      Park            @relation("RouteOrigin", fields: [originParkId], references: [id])
+  destinationPark Park            @relation("RouteDestination", fields: [destinationParkId], references: [id])
+  roadsidePoints  RoadsidePoint[]
+  parcels         Parcel[]
+  trips           Trip[]
+
+  @@unique([originParkId, destinationParkId])
+  @@map("routes")
+}
+
+/// Named stop along a route where a recipient can meet the bus (e.g. Owode junction).
+model RoadsidePoint {
+  id                String @id @default(cuid())
+  routeId           String
+  name              String
+  lat               Float
+  lng               Float
+  order             Int
+  minutesFromOrigin Int
+
+  route           Route            @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  parcels         Parcel[]
+  savedRecipients SavedRecipient[]
+
+  @@unique([routeId, order])
+  @@map("roadside_points")
+}
+
+model StorageRate {
+  id            String    @id @default(cuid())
+  parkId        String
+  sizeClass     SizeClass
+  dailyRateKobo Int
+  effectiveFrom DateTime  @default(now())
+
+  park Park @relation(fields: [parkId], references: [id], onDelete: Cascade)
+
+  @@index([parkId, sizeClass, effectiveFrom])
+  @@map("storage_rates")
+}
+
+// ─── People ─────────────────────────────────────────────────────────────────
+
+model User {
+  id            String              @id @default(cuid())
+  /// E.164, e.g. +2348035554471. Unique: one network-wide account per phone.
+  phone         String              @unique
+  name          String?
+  role          Role                @default(SENDER)
+  photoUrl      String?
+  /// Agents, drivers and park admins belong to exactly one park.
+  parkId        String?
+  /// The park whose subdomain a sender first signed up on (AUTH-3).
+  signupParkId  String?
+  language      Language            @default(EN)
+  notifyChannel NotificationChannel @default(WHATSAPP)
+  status        UserStatus          @default(ACTIVE)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  park             Park?            @relation("ParkStaff", fields: [parkId], references: [id])
+  signupPark       Park?            @relation("SignupPark", fields: [signupParkId], references: [id])
+  vendorProfile    VendorProfile?
+  driver           Driver?
+  savedRecipients  SavedRecipient[]
+  sentParcels      Parcel[]         @relation("ParcelSender")
+  createdParcels   Parcel[]         @relation("ParcelCreator")
+  handshakes       Handshake[]
+  events           ParcelEvent[]
+  trips            Trip[]
+  assignments      TripParcel[]
+  scannedManifests Manifest[]
+  disputesOpened   Dispute[]
+  invitesSent      StaffInvite[]
+
+  @@index([parkId, role])
+  @@map("users")
+}
+
+model OtpCode {
+  id         String              @id @default(cuid())
+  phone      String
+  codeHash   String
+  attempts   Int                 @default(0)
+  channel    NotificationChannel
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime            @default(now())
+
+  @@index([phone, createdAt])
+  @@map("otp_codes")
+}
+
+model StaffInvite {
+  id          String       @id @default(cuid())
+  parkId      String
+  phone       String
+  role        Role
+  status      InviteStatus @default(PENDING)
+  invitedById String
+  createdAt   DateTime     @default(now())
+
+  park      Park @relation(fields: [parkId], references: [id], onDelete: Cascade)
+  invitedBy User @relation(fields: [invitedById], references: [id])
+
+  @@index([parkId, status])
+  @@map("staff_invites")
+}
+
+model VendorProfile {
+  userId             String  @id
+  businessName       String
+  payoutBank         String?
+  payoutAccountName  String?
+  /// Only the last 4 digits are stored until real payouts exist (PAY-7, post-hackathon).
+  payoutAccountLast4 String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("vendor_profiles")
+}
+
+model SavedRecipient {
+  id                       String   @id @default(cuid())
+  userId                   String
+  name                     String
+  phone                    String
+  preferredParkId          String?
+  preferredRoadsidePointId String?
+  createdAt                DateTime @default(now())
+
+  user                   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preferredPark          Park?          @relation(fields: [preferredParkId], references: [id])
+  preferredRoadsidePoint RoadsidePoint? @relation(fields: [preferredRoadsidePointId], references: [id])
+
+  @@index([userId])
+  @@map("saved_recipients")
+}
+
+model Driver {
+  userId       String    @id
+  vehiclePlate String
+  vehicleType  String
+  /// Only drivers on the app can carry roadside parcels (DRV-2).
+  usesApp      Boolean   @default(true)
+  verifiedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("drivers")
+}
+
+// ─── Parcels ────────────────────────────────────────────────────────────────
+
+model Parcel {
+  id                String       @id @default(cuid())
+  /// Random, non-guessable; the only thing in the booking QR (HS-1).
+  publicId          String       @unique
+  /// Short code written on the parcel, e.g. PT-7K3Q (HS-6).
+  parcelCode        String       @unique
+  senderId          String?
+  originParkId      String
+  destinationParkId String
+  routeId           String
+  deliveryMode      DeliveryMode
+  roadsidePointId   String?
+  recipientName     String
+  recipientPhone    String
+  category          String
+  description       String
+  declaredValueKobo Int
+  sizeClass         SizeClass
+  podAmountKobo     Int          @default(0)
+  insured           Boolean      @default(false)
+  /// Fee snapshot at booking time (quote shown on S04).
+  fareKobo          Int
+  platformFeeKobo   Int
+  insuranceKobo     Int          @default(0)
+  totalKobo         Int
+  status            ParcelStatus @default(DRAFT)
+  createdBy         CreatedBy
+  createdByUserId   String?
+  draftExpiresAt    DateTime?
+  dropoffDeadline   DateTime?
+  /// Size top-up the sender must pay before drop-off completes (HS-5).
+  topUpRequiredKobo Int          @default(0)
+  /// Opaque id behind the recipient's signed tracking link (AUTH-5).
+  trackingLinkId    String?      @unique
+  /// Shelf or bay at the arrival park, e.g. "C4".
+  bay               String?
+  damaged           Boolean      @default(false)
+  /// Locked after 5 wrong collection codes (COL-4).
+  locked            Boolean      @default(false)
+  refusedReason     String?
+  /// Free pickup window starts here, not at arrival (COL-6).
+  arrivalNotifiedAt DateTime?
+  podPaidAt         DateTime?
+  storagePaidUntil  DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  sender          User?            @relation("ParcelSender", fields: [senderId], references: [id])
+  createdByUser   User?            @relation("ParcelCreator", fields: [createdByUserId], references: [id])
+  originPark      Park             @relation("ParcelOrigin", fields: [originParkId], references: [id])
+  destinationPark Park             @relation("ParcelDestination", fields: [destinationParkId], references: [id])
+  route           Route            @relation(fields: [routeId], references: [id])
+  roadsidePoint   RoadsidePoint?   @relation(fields: [roadsidePointId], references: [id])
+  handshakes      Handshake[]
+  events          ParcelEvent[]
+  tripParcels     TripParcel[]
+  collectionCodes CollectionCode[]
+  payments        Payment[]
+  ledgerEntries   LedgerEntry[]
+  notifications   Notification[]
+  disputes        Dispute[]
+
+  @@index([originParkId, status])
+  @@index([destinationParkId, status])
+  @@index([senderId, createdAt])
+  @@index([recipientPhone])
+  @@map("parcels")
+}
+
+model Handshake {
+  id           String          @id @default(cuid())
+  parcelId     String
+  method       HandshakeMethod
+  agentId      String?
+  /// Shown as a QR on the agent's screen for walk-in bookings (HS-3).
+  agentQrToken String?         @unique
+  smsCodeHash  String?
+  smsAttempts  Int             @default(0)
+  expiresAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime        @default(now())
+
+  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  agent  User?  @relation(fields: [agentId], references: [id])
+
+  @@index([parcelId])
+  @@map("handshakes")
+}
+
+/// Append-only: every custody step and status change, with who, when, where.
+model ParcelEvent {
+  id         String          @id @default(cuid())
+  parcelId   String
+  type       ParcelEventType
+  fromStatus ParcelStatus?
+  toStatus   ParcelStatus?
+  actorId    String?
+  lat        Float?
+  lng        Float?
+  photoUrl   String?
+  note       String?
+  meta       Json?
+  createdAt  DateTime        @default(now())
+
+  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Restrict)
+  actor  User?  @relation(fields: [actorId], references: [id])
+
+  @@index([parcelId, createdAt])
+  @@map("parcel_events")
+}
+
+// ─── Trips and custody ──────────────────────────────────────────────────────
+
+model Trip {
+  id                   String     @id @default(cuid())
+  driverId             String
+  routeId              String
+  originParkId         String
+  destinationParkId    String
+  vehiclePlate         String
+  status               TripStatus @default(LOADING)
+  /// Set by the agent at assignment; used for "load not accepted" alerts (DRV-5).
+  scheduledDepartureAt DateTime?
+  acceptedAt           DateTime?
+  departedAt           DateTime?
+  arrivedAt            DateTime?
+  createdAt            DateTime   @default(now())
+
+  driver          User            @relation(fields: [driverId], references: [id])
+  route           Route           @relation(fields: [routeId], references: [id])
+  originPark      Park            @relation("TripOrigin", fields: [originParkId], references: [id])
+  destinationPark Park            @relation("TripDestination", fields: [destinationParkId], references: [id])
+  parcels         TripParcel[]
+  manifests       Manifest[]
+  locationPoints  LocationPoint[]
+
+  @@index([driverId, status])
+  @@index([originParkId, status])
+  @@map("trips")
+}
+
+model TripParcel {
+  tripId       String
+  parcelId     String
+  assignedById String
+  assignedAt   DateTime  @default(now())
+  tickedOffAt  DateTime?
+  bay          String?
+
+  trip       Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  parcel     Parcel @relation(fields: [parcelId], references: [id])
+  assignedBy User   @relation(fields: [assignedById], references: [id])
+
+  @@id([tripId, parcelId])
+  @@index([parcelId])
+  @@map("trip_parcels")
+}
+
+/// One per trip and destination park; its token is the manifest QR (DRV-6, ARR-1).
+model Manifest {
+  id                String    @id @default(cuid())
+  tripId            String
+  destinationParkId String
+  token             String    @unique
+  scannedById       String?
+  scannedAt         DateTime?
+  createdAt         DateTime  @default(now())
+
+  trip            Trip  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  destinationPark Park  @relation(fields: [destinationParkId], references: [id])
+  scannedBy       User? @relation(fields: [scannedById], references: [id])
+
+  @@unique([tripId, destinationParkId])
+  @@map("manifests")
+}
+
+model LocationPoint {
+  id         String   @id @default(cuid())
+  tripId     String
+  lat        Float
+  lng        Float
+  recordedAt DateTime @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, recordedAt])
+  @@map("location_points")
+}
+
+/// 6-digit code, stored hashed. Counter codes expire after 10 minutes; roadside
+/// codes last until the trip ends (docs/reference/open-questions.md Q4).
+model CollectionCode {
+  id                String         @id @default(cuid())
+  parcelId          String
+  purpose           CodePurpose
+  codeHash          String
+  attempts          Int            @default(0)
+  sentToPhone       String
+  expiresAt         DateTime?
+  usedAt            DateTime?
+  voidedAt          DateTime?
+  collectorKind     CollectorKind?
+  collectorName     String?
+  collectorPhotoUrl String?
+  createdAt         DateTime       @default(now())
+
+  parcel Parcel @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+
+  @@index([parcelId, purpose, createdAt])
+  @@map("collection_codes")
+}
+
+// ─── Money ──────────────────────────────────────────────────────────────────
+
+model Payment {
+  id            String         @id @default(cuid())
+  parcelId      String
+  purpose       PaymentPurpose
+  amountKobo    Int
+  /// Our unique reference sent to Interswitch, e.g. ISW-PT-8F3KQ2.
+  txnRef        String         @unique
+  status        PaymentStatus  @default(PENDING)
+  responseCode  String?
+  payerPhone    String?
+  checkoutUrl   String?
+  requeryCount  Int            @default(0)
+  nextRequeryAt DateTime?
+  verifiedAt    DateTime?
+  rawResponse   Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  parcel        Parcel        @relation(fields: [parcelId], references: [id])
+  ledgerEntries LedgerEntry[]
+
+  @@index([parcelId, purpose])
+  @@index([status, nextRequeryAt])
+  @@map("payments")
+}
+
+/// Every Interswitch notification, stored once by provider reference (PAY-3).
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  providerRef String    @unique
+  payload     Json
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  @@map("webhook_events")
+}
+
+/// Append-only ledger (PAY-4). Amounts are signed kobo.
+model LedgerEntry {
+  id           String        @id @default(cuid())
+  parcelId     String?
+  paymentId    String?
+  account      LedgerAccount
+  /// User id (vendor/driver/sender) or park id; null for PLATFORM, HELD, INSURER.
+  accountRefId String?
+  amountKobo   Int
+  reason       String
+  createdAt    DateTime      @default(now())
+
+  parcel  Parcel?  @relation(fields: [parcelId], references: [id], onDelete: Restrict)
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([account, accountRefId, createdAt])
+  @@index([parcelId])
+  @@map("ledger_entries")
+}
+
+model Payout {
+  id           String        @id @default(cuid())
+  account      LedgerAccount
+  accountRefId String
+  amountKobo   Int
+  method       String
+  providerRef  String?
+  status       PayoutStatus  @default(PENDING)
+  createdAt    DateTime      @default(now())
+
+  @@index([account, accountRefId])
+  @@map("payouts")
+}
+
+// ─── Messages and disputes ──────────────────────────────────────────────────
+
+model Notification {
+  id          String              @id @default(cuid())
+  parcelId    String?
+  phone       String
+  channel     NotificationChannel
+  template    String
+  status      NotificationStatus  @default(QUEUED)
+  error       String?
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime            @default(now())
+
+  parcel Parcel? @relation(fields: [parcelId], references: [id])
+
+  @@index([parcelId])
+  @@index([phone, createdAt])
+  @@map("notifications")
+}
+
+model Dispute {
+  id             String        @id @default(cuid())
+  parcelId       String
+  openedById     String?
+  type           DisputeType
+  status         DisputeStatus @default(OPEN)
+  /// Status to return to when the dispute is closed (PRD §8 "previous state").
+  previousStatus ParcelStatus
+  resolution     String?
+  createdAt      DateTime      @default(now())
+  resolvedAt     DateTime?
+
+  parcel   Parcel @relation(fields: [parcelId], references: [id])
+  openedBy User?  @relation(fields: [openedById], references: [id])
+
+  @@index([parcelId])
+  @@index([status])
+  @@map("disputes")
+}
