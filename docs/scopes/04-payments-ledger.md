@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Branch | `scope/04-payments` (slices: `scope/04-payments/slN-name` → PR into `scope/04-payments`) |
+| Branch | `scope/04-payments` (slices: `s04/slN-name` → PR into `scope/04-payments`; slice branches are deleted once this scope is merged into `main`) |
 | Merges after | Scope 03 is merged into `main` and tagged `scope-03-done` |
 | Unblocks | 05 (pay for booking), 06 (walk-in, top-up), 07 (roadside POD), 08 (counter dues), 09 (ledger view, refunds) |
 | Design source | Senderv2 **S05** (confirming), **S06** (failed), receipt link; ledger rows in admin **P03**; payments monitor in **P07** |

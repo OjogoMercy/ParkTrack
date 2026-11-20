@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Branch | `scope/03-parcel-engine` (slices: `scope/03-parcel-engine/slN-name` → PR into `scope/03-parcel-engine`) |
+| Branch | `scope/03-parcel-engine` (slices: `s03/slN-name` → PR into `scope/03-parcel-engine`; slice branches are deleted once this scope is merged into `main`) |
 | Merges after | Scope 02 is merged into `main` and tagged `scope-02-done` |
 | Unblocks | 04 (payment → status), 05–09 (every status change, code, photo, message) |
 | Design source | none (backend); copy for messages comes from the design screens and PRD §11 |

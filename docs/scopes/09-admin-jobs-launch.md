@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Branch | `scope/09-admin-launch` (slices: `scope/09-admin-launch/slN-name` → PR into `scope/09-admin-launch`) |
+| Branch | `scope/09-admin-launch` (slices: `s09/slN-name` → PR into `scope/09-admin-launch`; slice branches are deleted once this scope is merged into `main`) |
 | Merges after | Scope 08 is merged into `main` and tagged `scope-08-done` |
 | Unblocks | the demo (feature freeze) |
 | Design source | Park and platform admin **P01** overview, **P02** parcels with detail panel, **P03** ledger and settlement, **P04** agents and drivers, **P05** routes, fares and storage rules, **P06** counter QR poster (A4), **P07** platform admin: parks, payments, health |

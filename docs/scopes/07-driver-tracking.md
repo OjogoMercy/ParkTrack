@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Branch | `scope/07-driver` (slices: `scope/07-driver/slN-name` → PR into `scope/07-driver`) |
+| Branch | `scope/07-driver` (slices: `s07/slN-name` → PR into `scope/07-driver`; slice branches are deleted once this scope is merged into `main`) |
 | Merges after | Scope 06 is merged into `main` and tagged `scope-06-done` |
 | Unblocks | 08 (manifests exist; parcels IN_TRANSIT) |
 | Design source | Driver **D01** load to accept, **D02** trip in progress, **D03** roadside handover with code, **D04** mark as missed, **D05** manifest QR, **D06** earnings; Senderv2 **S09** awaiting drop-off, **S10** in transit with live map, **S11** collected / proof of delivery; Recipient **R01** bus approaching + pay dues, **R02** paid + handover code, **R03** ready to collect |
