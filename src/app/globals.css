@@ -2,129 +2,200 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * ParkTrack UI v2 foundations (docs/design/ParkTrack UI Foundations.html).
+ * Neutral zinc surfaces, one brand accent (Volt), status colours that only
+ * ever mean status, four radii, a 4px spacing grid (Tailwind's default), and
+ * Geist / Geist Mono. Light only: the designs have no dark mode.
+ */
+
+:root {
+  /* Surfaces and ink */
+  --pt-bg: #fafafa;
+  --pt-panel: #ffffff;
+  --pt-sunken: #f4f4f5;
+  --pt-hover: #efeff1;
+  --pt-line: #e8e8eb;
+  --pt-line-strong: #d4d4d8;
+  --pt-fg: #09090b;
+  --pt-fg-2: #52525b;
+  --pt-fg-3: #6b6b74;
+  --pt-fg-disabled: #a1a1aa;
+
+  /* Brand accent: logo, live states, the scanner. Never for ordinary buttons. */
+  --pt-volt: #d4f86a;
+  --pt-volt-hover: #c6ef55;
+  --pt-volt-ink: #1a2e05;
+  --pt-volt-soft: #f4fdd6;
+  --pt-live: #65a30d;
+
+  /* Status: blue moving, amber needs action, green done, red problem */
+  --pt-blue: #2563eb;
+  --pt-blue-bg: #eff4ff;
+  --pt-blue-fg: #1d4ed8;
+  --pt-amber: #d97706;
+  --pt-amber-bg: #fff6e5;
+  --pt-amber-fg: #a44a06;
+  --pt-green: #059669;
+  --pt-green-bg: #ebfbf3;
+  --pt-green-fg: #047857;
+  --pt-red: #dc2626;
+  --pt-red-bg: #fef2f2;
+  --pt-red-fg: #b91c1c;
+
+  /* shadcn/ui semantic names, mapped onto ParkTrack tokens */
+  --background: var(--pt-bg);
+  --foreground: var(--pt-fg);
+  --card: var(--pt-panel);
+  --card-foreground: var(--pt-fg);
+  --popover: var(--pt-panel);
+  --popover-foreground: var(--pt-fg);
+  --primary: var(--pt-fg);
+  --primary-foreground: #ffffff;
+  --secondary: var(--pt-panel);
+  --secondary-foreground: var(--pt-fg);
+  --muted: var(--pt-sunken);
+  --muted-foreground: var(--pt-fg-3);
+  --accent: var(--pt-sunken);
+  --accent-foreground: var(--pt-fg);
+  --destructive: var(--pt-red-fg);
+  --border: var(--pt-line);
+  --input: var(--pt-line-strong);
+  --ring: var(--pt-fg);
+  --radius: 8px;
+}
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /* Fonts (variables set by next/font in src/app/layout.tsx) */
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
+
+  /* ParkTrack colours: bg-panel, text-fg-3, border-line, bg-volt, bg-amber-bg ... */
+  --color-bg: var(--pt-bg);
+  --color-panel: var(--pt-panel);
+  --color-sunken: var(--pt-sunken);
+  --color-hover: var(--pt-hover);
+  --color-line: var(--pt-line);
+  --color-line-strong: var(--pt-line-strong);
+  --color-fg: var(--pt-fg);
+  --color-fg-2: var(--pt-fg-2);
+  --color-fg-3: var(--pt-fg-3);
+  --color-fg-disabled: var(--pt-fg-disabled);
+  --color-volt: var(--pt-volt);
+  --color-volt-hover: var(--pt-volt-hover);
+  --color-volt-ink: var(--pt-volt-ink);
+  --color-volt-soft: var(--pt-volt-soft);
+  --color-live: var(--pt-live);
+  --color-blue: var(--pt-blue);
+  --color-blue-bg: var(--pt-blue-bg);
+  --color-blue-fg: var(--pt-blue-fg);
+  --color-amber: var(--pt-amber);
+  --color-amber-bg: var(--pt-amber-bg);
+  --color-amber-fg: var(--pt-amber-fg);
+  --color-green: var(--pt-green);
+  --color-green-bg: var(--pt-green-bg);
+  --color-green-fg: var(--pt-green-fg);
+  --color-red: var(--pt-red);
+  --color-red-bg: var(--pt-red-bg);
+  --color-red-fg: var(--pt-red-fg);
+
+  /* shadcn/ui colour utilities */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
-}
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
+  /*
+   * One radius family: 6 badges, 8 controls, 12 cards, 16 sheets. Nothing else.
+   * Semantic names first; every standard Tailwind radius also lands on one of
+   * the four so shadcn components can't drift.
+   */
+  --radius-badge: 6px;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-sheet: 16px;
+  --radius-xs: 6px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 16px;
+  --radius-4xl: 16px;
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Shadows */
+  --shadow-1: 0 1px 2px rgba(9, 9, 11, 0.06);
+  --shadow-2:
+    0 1px 2px rgba(9, 9, 11, 0.04), 0 16px 40px -12px rgba(9, 9, 11, 0.18);
+  --shadow-focus: 0 0 0 3px rgba(9, 9, 11, 0.08);
+  --shadow-seg: 0 1px 2px rgba(9, 9, 11, 0.08), 0 0 0 1px rgba(9, 9, 11, 0.04);
+
+  /*
+   * Type scale. Body is 15px; nothing on a phone goes above 20px except money
+   * and codes. Hierarchy comes from weight and grey, not size.
+   */
+  --text-title: 20px;
+  --text-title--line-height: 28px;
+  --text-title--letter-spacing: -0.02em;
+  --text-title--font-weight: 600;
+  --text-heading: 17px;
+  --text-heading--line-height: 24px;
+  --text-heading--letter-spacing: -0.015em;
+  --text-heading--font-weight: 600;
+  --text-body: 15px;
+  --text-body--line-height: 22px;
+  --text-sub: 14px;
+  --text-sub--line-height: 20px;
+  --text-small: 13px;
+  --text-small--line-height: 18px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-caption--font-weight: 500;
+  --text-tab: 11px;
+  --text-tab--line-height: 14px;
+  --text-tab--font-weight: 500;
+  --text-amount: 28px;
+  --text-amount--line-height: 34px;
+  --text-amount--letter-spacing: -0.03em;
+  --text-amount--font-weight: 600;
+  --text-kpi: 24px;
+  --text-kpi--line-height: 30px;
+  --text-kpi--letter-spacing: -0.025em;
+  --text-kpi--font-weight: 600;
+  --text-code: 15px;
+  --text-code--line-height: 22px;
+  --text-code--font-weight: 600;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
     @apply font-sans;
   }
+  body {
+    @apply bg-bg text-body text-fg antialiased;
+    letter-spacing: -0.005em;
+  }
+}
+
+/* Money and counts always use tabular figures. */
+@utility num {
+  font-variant-numeric: tabular-nums;
 }
