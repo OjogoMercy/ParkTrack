@@ -1,3 +1,4 @@
+import type { ParcelStatus } from "@/contracts/enums";
 import { cn } from "@/lib/utils";
 
 /**
@@ -42,7 +43,7 @@ export function Badge({
 
 /**
  * Parcel status → label and tone, matching the designs (PRD §8 states).
- * The status union is redeclared from src/contracts once Scope 01 sl8 lands.
+ * Keyed by the contract's ParcelStatus, so a new status fails typecheck here.
  */
 export const PARCEL_STATUS_BADGE = {
   DRAFT: { label: "Draft", tone: "neutral" },
@@ -59,9 +60,10 @@ export const PARCEL_STATUS_BADGE = {
   DISPUTED: { label: "Disputed", tone: "red" },
   RESOLVED: { label: "Resolved", tone: "neutral" },
   CANCELLED: { label: "Cancelled", tone: "neutral" },
-} as const satisfies Record<string, { label: string; tone: BadgeTone }>;
+} as const satisfies Record<ParcelStatus, { label: string; tone: BadgeTone }>;
 
-export type ParcelStatusKey = keyof typeof PARCEL_STATUS_BADGE;
+/** @deprecated use ParcelStatus from "@/contracts" */
+export type ParcelStatusKey = ParcelStatus;
 
 export function StatusBadge({
   status,
