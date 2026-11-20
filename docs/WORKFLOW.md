@@ -13,11 +13,11 @@ Repo: **https://github.com/OjogoMercy/ParkTrack** · Owner: **OjogoMercy** (the 
 ```
 main                                   ← owner only; receives one PR per completed scope, in order
 ├─ scope/01-foundation                 ← receives slice PRs for Scope 01
-│   ├─ scope/01-foundation/sl1-scaffold
-│   ├─ scope/01-foundation/sl2-ci
+│   ├─ s01/sl1-scaffold      ← slice branch, PR into scope/01-foundation
+│   ├─ s01/sl2-ci
 │   └─ …
 ├─ scope/02-identity
-│   ├─ scope/02-identity/sl3-otp
+│   ├─ s02/sl3-otp
 │   └─ …
 ├─ scope/03-parcel-engine
 ├─ scope/04-payments
@@ -32,7 +32,7 @@ main                                   ← owner only; receives one PR per compl
 |---|---|---|
 | `main` | **Nobody pushes directly.** Only the owner merges. | One PR from `scope/NN-*` when that whole scope is complete and the previous scope is already merged |
 | `scope/NN-name` | Nobody pushes directly | Slice PRs only, reviewed and merged by that scope's lead |
-| `scope/NN-name/slX-short-name` | The person doing that slice | Normal commits; open a PR into `scope/NN-name` when the slice check passes |
+| `sNN/slX-short-name` (e.g. `s01/sl3-tokens`) | The person doing that slice | Normal commits; open a PR into `scope/NN-name` when the slice check passes. **Kept after the slice PR merges; deleted only once the whole scope is merged into `main`** (§4 step 6) |
 
 Commit messages: `S05/sl3: one-page booking form with live total`.
 
@@ -47,7 +47,7 @@ Settings → Rules → Rulesets → **New branch ruleset**. Two rulesets:
 
 Note: rulesets are free on public repos; on a private personal repo they need GitHub Pro. If neither applies, use Settings → Branches → classic branch protection on `main` (require PR, require `ci`) and add collaborators with Write while the owner stays the only Admin.
 
-**Ruleset B — `scope/*`** (target: `scope/*` but **not** `scope/*/*`)
+**Ruleset B — `scope/*`** (target: `scope/*`; slice branches use the separate `sNN/` prefix so they are not covered)
 - Restrict deletions · Block force pushes.
 - Require a pull request before merging: 1 approval (the scope lead).
 - Require status checks: `ci`.
@@ -76,6 +76,11 @@ Without an organization, Ruleset B still stops direct pushes, and **only the sco
    - every P0 slice in scope N's file is merged into its branch and its PR checklist (§7) is ticked.
    Optional safety net: Scope 01's CI can add a `scope-gate` check that fails a `scope/NN-*` → `main` PR while the tag `scope-(NN-1)-done` is missing.
 5. After each merge into `main`, every scope lead still building merges `main` into their scope branch (via a PR) the same day, so later scopes always sit on top of the real code.
+6. **Branch cleanup, only after the scope is in `main`.** Slice branches are kept while their scope is in progress, so you can still look back at each slice. Once scope NN is merged into `main` and tagged, the owner deletes that scope's slice branches in one go (example for scope 01):
+   ```powershell
+   git ls-remote --heads origin "refs/heads/s01/*" | ForEach-Object { git push origin --delete ($_ -split "\s+")[1] }
+   ```
+   The slice PRs, their reviews and commits stay visible on GitHub under Pull requests → Closed. Leave "Automatically delete head branches" **off** in Settings → General, otherwise GitHub deletes each slice branch the moment its PR merges. The `scope/NN-*` branch itself can be deleted at the same time if you want; the `scope-NN-done` tag marks where it was.
 
 **Pace:** no fixed dates. A scope merges when it is complete. P0 slices come before P1 slices everywhere.
 
@@ -95,7 +100,7 @@ Branches keep people apart while they work; folders keep the **merges into `main
 | Path | Scope |
 |---|---|
 | `prisma/**`, `src/contracts/**`, `src/components/ui/**`, `src/lib/**`, `src/mocks/**`, `.github/**`, root config | 01 |
-| `src/middleware.ts`, `src/server/{auth,parks}/**`, `src/app/sites/[park]/{layout,not-found,signin}*`, `src/app/console/{layout,signin}*`, `src/app/api/{auth,park}/**`, `src/features/identity/**` | 02 |
+| `src/proxy.ts`, `src/server/{auth,parks}/**`, `src/app/sites/[park]/{layout,not-found,signin}*`, `src/app/console/{layout,signin}*`, `src/app/api/{auth,park}/**`, `src/features/identity/**` | 02 |
 | `src/server/{parcels,notify,uploads}/**`, `src/app/api/uploads/**`, `src/features/parcel-engine/**` | 03 |
 | `src/server/{payments,ledger}/**`, `src/app/pay/**`, `src/app/api/{payments,webhooks,ledger}/**`, `src/app/api/parcels/[id]/pay/**`, `src/app/api/jobs/requery/**`, `src/features/payments/**` | 04 |
 | `src/server/{booking,recipients,vendors}/**`, `src/app/sites/[park]/(sender)/**` *except* `parcels/[code]/**`, `src/app/api/parcels/route.ts`, `src/app/api/{me,quote}/**`, `src/features/sender/**` | 05 |
@@ -130,7 +135,7 @@ Shared UI pieces (QR display, QR scanner, photo capture, OTP input, status badge
 - [ ] No secret in the client bundle or in Git; new env keys are in `.env.example`.
 - [ ] Screens checked against `docs/design/` at 390 px (1280 px for admin).
 - [ ] PR body lists what was verified for real (Interswitch sandbox, real SMS, real DB) vs what still runs on a stub.
-- [ ] After merge, the owner tags `scope-NN-done` and pushes the tag.
+- [ ] After merge, the owner tags `scope-NN-done`, pushes the tag, and deletes that scope's `sNN/*` slice branches (§4 step 6).
 
 ## 9. PR templates
 

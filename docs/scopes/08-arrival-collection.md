@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Branch | `scope/08-arrival` (slices: `scope/08-arrival/slN-name` → PR into `scope/08-arrival`) |
+| Branch | `scope/08-arrival` (slices: `s08/slN-name` → PR into `scope/08-arrival`; slice branches are deleted once this scope is merged into `main`) |
 | Merges after | Scope 07 is merged into `main` and tagged `scope-07-done` |
 | Unblocks | 09 (store data, settled parcels for ledger view) |
 | Design source | Arrival agent **V01** buses arriving, **V02** tick off the load, **V03** parcels in the store, **V04** release with code, **V05** code locked after 5 tries; Recipient **R04** at the counter: pay dues, **R05** read code to agent, **R06** collected receipt |

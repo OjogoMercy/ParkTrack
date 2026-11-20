@@ -7,7 +7,7 @@ Every functional requirement in PRD §7, with its priority and the scope that de
 | ID | Pri | Scope | Note |
 |---|---|---|---|
 | PARK-1 | P0 | 01 (schema + seed), 02 (read API), 09 (admin edit) | |
-| PARK-2 | P0 | 02 | middleware + S13 |
+| PARK-2 | P0 | 02 | `src/proxy.ts` (Next 16 name for middleware) + S13 |
 | PARK-3 | P0 | 02 | reserved names |
 | PARK-4 | P0 | 01 (token), 09 (poster), 08 (scan target) | |
 | AUTH-1 | P0 | 02 | OTP via 03 notify |
