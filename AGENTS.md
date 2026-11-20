@@ -7,7 +7,7 @@ Before writing code, read:
 3. Your scope file in `docs/scopes/`
 4. `docs/reference/open-questions.md`: decided defaults (6-digit codes, fare split 60/40, ...)
 
-Work only in your scope's folders. Money is integer kobo. Parcel status changes only through `@/server/parcels` `transition()`. QR codes carry random IDs only.
+Package manager is **npm** (commit `package-lock.json`; never add pnpm/yarn lockfiles). Work only in your scope's folders. Money is integer kobo. Parcel status changes only through `@/server/parcels` `transition()`. QR codes carry random IDs only.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

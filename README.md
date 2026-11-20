@@ -7,28 +7,16 @@ PRD: [docs/ParkTrack_PRD_v1.1.pdf](docs/ParkTrack_PRD_v1.1.pdf) · Designs: [doc
 
 ## Stack
 
-Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 + shadcn/ui · Prisma on Supabase Postgres · Zod · Supabase Storage + Realtime · Interswitch Web Checkout · Termii SMS + WhatsApp Cloud API · Upstash QStash · Vercel + Sentry · pnpm · Vitest.
+Next.js 16 (App Router, TypeScript) · Tailwind CSS 4 + shadcn/ui · Prisma on Supabase Postgres · Zod · Supabase Storage + Realtime · Interswitch Web Checkout · Termii SMS + WhatsApp Cloud API · Upstash QStash · Vercel + Sentry · npm · Vitest.
 
 > **Next.js 16 is newer than most tutorials and AI training data.** Before writing Next.js code, read the matching guide in `node_modules/next/dist/docs/`. Two changes that matter here: `middleware.ts` is now **`proxy.ts`**, and **`cacheComponents`** is on (pages are dynamic by default; opt into caching with `"use cache"`).
 
 ## Setup
 
-Requirements: Node 22+ and pnpm (via corepack).
+Requirements: Node 22+ (npm comes with it).
 
 ```powershell
-corepack enable pnpm
-```
-
-If that fails with a permissions error on Windows, install the pnpm shim into your user folder instead:
-
-```powershell
-corepack enable pnpm --install-directory "$env:APPDATA\npm"
-```
-
-Then:
-
-```powershell
-pnpm install
+npm install
 ```
 
 ```powershell
@@ -38,22 +26,24 @@ Copy-Item .env.example .env.local
 Fill in `.env.local` (at minimum `DATABASE_URL` and `DIRECT_URL` once Scope 01 sl6 lands), then:
 
 ```powershell
-pnpm dev
+npm run dev
 ```
 
 The app runs at http://localhost:3000. Park subdomains work locally as `http://ogbomoso.localhost:3000` once Scope 02 adds `src/proxy.ts`.
 
 ## Scripts
 
-| Command                             | What it does                                                      |
-| ----------------------------------- | ----------------------------------------------------------------- |
-| `pnpm dev`                          | Dev server                                                        |
-| `pnpm build`                        | Production build                                                  |
-| `pnpm typecheck`                    | Generate route types, then `tsc --noEmit`                         |
-| `pnpm lint`                         | ESLint (Next.js rules + Prettier compatibility)                   |
-| `pnpm test`                         | Vitest, once                                                      |
-| `pnpm format` / `pnpm format:check` | Prettier write / check                                            |
-| `pnpm check`                        | typecheck + lint + test + format check (what CI runs, plus build) |
+| Command                                   | What it does                                                      |
+| ----------------------------------------- | ----------------------------------------------------------------- |
+| `npm run dev`                             | Dev server                                                        |
+| `npm run build`                           | Production build                                                  |
+| `npm run typecheck`                       | Generate route types, then `tsc --noEmit`                         |
+| `npm run lint`                            | ESLint (Next.js rules + Prettier compatibility)                   |
+| `npm test`                                | Vitest, once                                                      |
+| `npm run format` / `npm run format:check` | Prettier write / check                                            |
+| `npm run check`                           | typecheck + lint + test + format check (what CI runs, plus build) |
+
+Add packages with `npm install <name>` (or `npm install -D <name>` for dev tools) and commit `package-lock.json` with them. Add shadcn components with `npx shadcn@latest add <component>`.
 
 ## Where code goes
 
