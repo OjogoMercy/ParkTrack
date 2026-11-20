@@ -15,7 +15,7 @@ One network-wide account that works on every park subdomain; each park's pages r
 ## Owned paths
 
 ```
-src/middleware.ts
+src/proxy.ts                  # Next.js 16 renamed middleware.ts → proxy.ts (Node runtime, export `proxy`)
 src/server/auth/**            src/server/parks/**
 src/app/sites/[park]/layout.tsx   src/app/sites/[park]/not-found.tsx   src/app/sites/[park]/signin/**
 src/app/console/layout.tsx        src/app/console/signin/**
@@ -51,7 +51,7 @@ src/features/identity/**
 
 | Slice | Pri | Work | Check |
 |---|---|---|---|
-| sl1 | P0 | Middleware: host parsing (prod + `*.localhost`), reserved names, rewrite to `/sites/[park]` or `/console`; park lookup cached; unknown → S13 | `ogbomoso.localhost:3000` shows park layout; `ogbomosho.localhost:3000` shows S13 listing both parks; `app.localhost:3000` hits console |
+| sl1 | P0 | `src/proxy.ts` (Next 16 replaces `middleware.ts`; read `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/proxy.md` first): host parsing (prod + `*.localhost`), reserved names, rewrite to `/sites/[park]` or `/console`; park lookup cached; unknown → S13 | `ogbomoso.localhost:3000` shows park layout; `ogbomosho.localhost:3000` shows S13 listing both parks; `app.localhost:3000` hits console |
 | sl2 | P0 | `GET /api/park` + `currentPark()`; `sites/[park]/layout.tsx` with park header (initials avatar, name, subdomain, Sign in link) | Header matches S01 top bar |
 | sl3 | P0 | OTP: `otp_codes` hashed, **6 digits (decided; S02 shows 6 boxes, not 4)**, 5-min expiry, 5 attempts, resend timer 30 s, WhatsApp first then "Send by SMS instead"; dev mode logs code to console | Wrong code ×5 locks; resend disabled for 30 s |
 | sl4 | P0 | Session: jose-signed HTTP-only cookie, domain `.ROOT_DOMAIN`, 30-day rolling; `getSession`, `requireRole`; `signup_park_id` stored on first sign-in (AUTH-3) | Sign in on `ogbomoso.` then open `ibadan.`: still signed in; profile shows "Joined through Ogbomoso Motor Park" |

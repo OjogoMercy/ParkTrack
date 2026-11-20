@@ -67,7 +67,7 @@ These come from the designs; all are additive and already reflected in [open-que
 
 ## Out of scope
 
-Feature screens, real Interswitch/Termii/WhatsApp calls, middleware, auth logic, PWA.
+Feature screens, real Interswitch/Termii/WhatsApp calls, `src/proxy.ts` (subdomain routing), auth logic, PWA.
 
 ## Definition of done
 
