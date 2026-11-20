@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Branch | `scope/06-origin` (slices: `scope/06-origin/slN-name` → PR into `scope/06-origin`) |
+| Branch | `scope/06-origin` (slices: `s06/slN-name` → PR into `scope/06-origin`; slice branches are deleted once this scope is merged into `main`) |
 | Merges after | Scope 05 is merged into `main` and tagged `scope-05-done` |
 | Unblocks | 07 (assigned loads for drivers) |
 | Design source | Origin agent **A01** counter today, **A02** scan sender QR, **A03** check in (size, write code, photo), **A04** walk-in booking, **A05** walk-in payment + handshake, **A06** assign to driver, **A07** loads |

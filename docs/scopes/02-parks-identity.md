@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Branch | `scope/02-identity` (slices: `scope/02-identity/slN-name` → PR into `scope/02-identity`) |
+| Branch | `scope/02-identity` (slices: `s02/slN-name` → PR into `scope/02-identity`; slice branches are deleted once this scope is merged into `main`) |
 | Merges after | Scope 01 is merged into `main` and tagged `scope-01-done` |
 | Unblocks | all signed-in screens (05–09) |
 | Design source | Senderv2 **S02** (sign in), **S13** (park not found); console sign-in reuses S02 layout |

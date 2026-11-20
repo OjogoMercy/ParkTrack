@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Branch | `scope/01-foundation` (slices: `scope/01-foundation/slN-name` → PR into `scope/01-foundation`) |
+| Branch | `scope/01-foundation` (slices: `s01/slN-name` → PR into `scope/01-foundation`; slice branches are deleted once this scope is merged into `main`) |
 | Merges after | nothing: goes first, alone; no other scope branch exists until it merges |
 | Unblocks | every other scope |
 | Design source | `ParkTrack UI Foundations.html` |

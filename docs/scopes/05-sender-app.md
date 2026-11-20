@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Branch | `scope/05-sender` (slices: `scope/05-sender/slN-name` → PR into `scope/05-sender`) |
+| Branch | `scope/05-sender` (slices: `s05/slN-name` → PR into `scope/05-sender`; slice branches are deleted once this scope is merged into `main`) |
 | Merges after | Scope 04 is merged into `main` and tagged `scope-04-done` |
 | Unblocks | 06 (there are self-booked parcels to scan) |
 | Design source | Senderv2 **S01** park home, **S03** new parcel (one page), **S04** review and pay, **S07** booked QR, **S08** my parcels, **S12** account & saved recipients |
