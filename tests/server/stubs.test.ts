@@ -1,0 +1,216 @@
+import { describe, expect, it } from "vitest";
+import { z } from "zod";
+import * as A from "@/contracts/api";
+import * as D from "@/contracts/dto";
+import { STUB_OWNER } from "@/mocks/stub";
+import * as F from "@/mocks/fixtures";
+import * as admin from "@/server/admin";
+import * as arrival from "@/server/arrival";
+import * as assignment from "@/server/assignment";
+import * as auth from "@/server/auth";
+import * as booking from "@/server/booking";
+import * as collection from "@/server/collection";
+import * as disputes from "@/server/disputes";
+import * as dropoff from "@/server/dropoff";
+import * as handshake from "@/server/handshake";
+import * as jobs from "@/server/jobs";
+import * as ledger from "@/server/ledger";
+import * as notify from "@/server/notify";
+import * as parcels from "@/server/parcels";
+import * as parks from "@/server/parks";
+import * as payments from "@/server/payments";
+import * as recipients from "@/server/recipients";
+import * as roadside from "@/server/roadside";
+import * as tracking from "@/server/tracking";
+import * as trips from "@/server/trips";
+import * as uploads from "@/server/uploads";
+import * as vendors from "@/server/vendors";
+
+const modules = {
+  admin,
+  arrival,
+  assignment,
+  auth,
+  booking,
+  collection,
+  disputes,
+  dropoff,
+  handshake,
+  jobs,
+  ledger,
+  notify,
+  parcels,
+  parks,
+  payments,
+  recipients,
+  roadside,
+  tracking,
+  trips,
+  uploads,
+  vendors,
+};
+
+function valid(schema: z.ZodType, value: unknown) {
+  const r = schema.safeParse(value);
+  if (!r.success) throw new Error(z.prettifyError(r.error));
+}
+
+describe("service stubs", () => {
+  it("exist for every module in the ownership table, and are marked STUB", () => {
+    expect(Object.keys(modules).sort()).toEqual(Object.keys(STUB_OWNER).sort());
+    for (const [name, mod] of Object.entries(modules))
+      expect(mod.STUB, name).toBe(true);
+  });
+
+  it("return data that satisfies the contracts", async () => {
+    valid(D.SessionUser, await auth.getSession());
+    valid(D.SessionUser, await auth.requireRole("AGENT"));
+    valid(A.AuthOtp.response, await auth.sendOtp("+2340000000101"));
+    valid(
+      A.AuthVerify.response,
+      await auth.verifyOtp("+2340000000101", "123456"),
+    );
+    expect(
+      await auth.verifyRecipientLink(await auth.signRecipientLink("p")),
+    ).not.toBeNull();
+    expect(auth.parkScope(F.bayoSession)).toHaveProperty("OR");
+
+    valid(D.ParkPublic, await parks.currentPark());
+    valid(z.array(D.ParkRef), await parks.listLiveParks());
+
+    valid(D.ParcelSummary, await parcels.createDraft({} as parcels.DraftInput));
+    valid(
+      D.Quote,
+      await parcels.quote({ routeId: "r", size: "M", podKobo: 0 }),
+    );
+    valid(
+      D.ParcelSummary,
+      await parcels.transition("p", "RECEIVED_AT_ORIGIN", { actor: "AGENT" }),
+    );
+    await expect(
+      parcels.transition("p", "SETTLED", { actor: "AGENT" }),
+    ).rejects.toThrow(/not allowed/);
+    expect(
+      (await parcels.verifyCollectionCode("p", "000000", "COUNTER")).ok,
+    ).toBe(false);
+
+    expect((await notify.notify("handshake_complete", "p")).sent).toBe(1);
+    valid(
+      A.CreateUpload.response,
+      await uploads.createSignedUpload({
+        kind: "dropoff",
+        parcelId: "p",
+        contentType: "image/jpeg",
+        sizeBytes: 1000,
+      }),
+    );
+
+    valid(
+      A.StartPayment.response,
+      await payments.startPayment("p", "SHIPPING", {
+        kind: "user",
+        userId: "u",
+      }),
+    );
+    valid(D.PaymentStatusView, await payments.requery("ISW-PT-8F3KQ2"));
+    valid(D.LedgerView, await ledger.ledger({ account: "PARK" }));
+    valid(D.EarningsView, await ledger.driverEarnings("d", "week"));
+
+    valid(
+      A.CreateParcel.response,
+      await booking.createBooking({} as A.BookingInput, {
+        originParkId: "o",
+        senderId: "s",
+        createdBy: "SENDER",
+        createdByUserId: "s",
+      }),
+    );
+    valid(A.ListMyParcels.response, await booking.listMyParcels("u", "active"));
+    valid(z.array(D.SavedRecipientDto), await recipients.listRecipients("u"));
+    valid(D.Profile, await vendors.getProfile("u"));
+
+    valid(D.HandshakeView, await handshake.getForAgent("x", "a"));
+    valid(
+      A.CompleteDropoff.response,
+      await dropoff.completeDropoff(
+        "p",
+        { sizeClass: "M", codeWritten: true, photoUrl: "https://x.test/a.jpg" },
+        "a",
+      ),
+    );
+    valid(
+      A.CompleteDropoff.response,
+      await dropoff.completeDropoff(
+        "p",
+        { sizeClass: "L", codeWritten: true, photoUrl: "https://x.test/a.jpg" },
+        "a",
+      ),
+    );
+    valid(D.CounterToday, await assignment.counterTodayFor("park"));
+    valid(D.AssignView, await assignment.assignViewFor("park"));
+    valid(D.LoadsView, await assignment.loadsFor("park"));
+    valid(
+      A.WalkInBooking.response,
+      await assignment.walkIn({
+        sender: { phone: "x", name: "y" },
+        booking: {} as A.BookingInput,
+        agentId: "a",
+        parkId: "p",
+      }),
+    );
+
+    valid(D.DriverLoad, await trips.driverLoadFor("d"));
+    valid(D.DriverLoad, await trips.acceptLoad("t", "d"));
+    valid(
+      A.RoadsideAction.response,
+      await roadside.handover("p", "715204", "d"),
+    );
+    valid(
+      A.RoadsideAction.response,
+      await roadside.handover("p", "111111", "d"),
+    );
+    valid(
+      A.RoadsideAction.response,
+      await roadside.markMissed("p", "not_at_stop", "d"),
+    );
+    valid(D.TrackingView, await tracking.trackingForLink(F.TRACKING_LINK));
+    expect(await tracking.trackingForLink("forged")).toBeNull();
+    valid(D.ParcelDetail, await tracking.parcelDetailFor("PT-7K3Q", "u"));
+
+    valid(D.ArrivalsView, await arrival.arrivalsFor("park"));
+    valid(D.ManifestView, await arrival.manifestFor(F.MANIFEST_TOKEN, "a"));
+    valid(z.array(D.StoreItem), await arrival.storeFor("park", "fees_due"));
+    valid(D.ReleaseView, await arrival.releaseViewFor("PT-7K3Q", "a"));
+    valid(
+      D.CollectView,
+      await collection.collectViewFor(F.COUNTER_TOKEN, {
+        kind: "link",
+        token: F.TRACKING_LINK,
+      }),
+    );
+    valid(
+      A.ReleaseParcel.response,
+      await collection.release(
+        "p",
+        { code: "482913", collector: { kind: "RECIPIENT" } },
+        "a",
+      ),
+    );
+
+    valid(D.ParkOverview, await admin.parkOverviewFor("park"));
+    valid(
+      D.DisputeDto,
+      await disputes.openDispute(
+        { parcelId: "p", type: "DAMAGED", note: "Crushed box" },
+        { actor: "RECIPIENT" },
+      ),
+    );
+    expect((await jobs.runBookingExpiry()).processed).toBe(0);
+  });
+
+  it("never hands out shared fixture objects (callers can't corrupt them)", async () => {
+    const a = await parks.currentPark();
+    a!.name = "Changed";
+    expect((await parks.currentPark())!.name).toBe("Ogbomoso Motor Park");
+  });
+});
