@@ -15,7 +15,7 @@ No business logic and no feature screens.
 ## Owned paths
 
 ```
-package.json, pnpm-lock.yaml, tsconfig.json, next.config.ts (base), tailwind/postcss config, eslint config,
+package.json, package-lock.json, tsconfig.json, next.config.ts (base), tailwind/postcss config, eslint config,
 components.json, .env.example, .gitignore, README.md (root)
 .github/**                    # workflows, scopes.json, PR template, CODEOWNERS
 prisma/**                     # schema, migrations, seed
@@ -29,13 +29,13 @@ src/app/layout.tsx, src/app/globals.css, src/app/page.tsx (placeholder)
 
 ## Stack (from PRD §14)
 
-Next.js App Router + TypeScript · Tailwind + shadcn/ui · Prisma on Supabase Postgres · Zod · Supabase Storage + Realtime · jose (signed cookies/links) · qrcode + html5-qrcode · Leaflet/OSM · Upstash QStash · Termii SMS · WhatsApp Cloud API · Interswitch Web Checkout · Serwist (PWA, added in 09) · Vercel + Sentry. Package manager: pnpm.
+Next.js App Router + TypeScript · Tailwind + shadcn/ui · Prisma on Supabase Postgres · Zod · Supabase Storage + Realtime · jose (signed cookies/links) · qrcode + html5-qrcode · Leaflet/OSM · Upstash QStash · Termii SMS · WhatsApp Cloud API · Interswitch Web Checkout · Serwist (PWA, added in 09) · Vercel + Sentry. Package manager: **npm** (decided; ships with Node, no extra setup on Windows). Commit `package-lock.json`.
 
 ## Slices
 
 | Slice | Pri | Work | Check |
 |---|---|---|---|
-| sl1 | P0 | Next.js + TS + Tailwind + shadcn init; folder layout from WORKFLOW §6 (empty `index.ts`/`.gitkeep` per owned folder); `.env.example` with every key: `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `AUTH_JWT_SECRET`, `LINK_SIGNING_SECRET`, `ROOT_DOMAIN` (`parktrack.ng` / `localhost:3000`), `ISW_MERCHANT_CODE`, `ISW_PAY_ITEM_ID`, `ISW_CLIENT_ID`, `ISW_SECRET`, `ISW_BASE_URL`, `ISW_WEBHOOK_SECRET`, `TERMII_API_KEY`, `TERMII_SENDER_ID`, `WA_PHONE_NUMBER_ID`, `WA_TOKEN`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `SENTRY_DSN`, `NOTIFY_MODE` (`console`/`live`) | `pnpm dev` boots; `pnpm build` passes; no secret committed |
+| sl1 | P0 | Next.js + TS + Tailwind + shadcn init; folder layout from WORKFLOW §6 (empty `index.ts`/`.gitkeep` per owned folder); `.env.example` with every key: `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `AUTH_JWT_SECRET`, `LINK_SIGNING_SECRET`, `ROOT_DOMAIN` (`parktrack.ng` / `localhost:3000`), `ISW_MERCHANT_CODE`, `ISW_PAY_ITEM_ID`, `ISW_CLIENT_ID`, `ISW_SECRET`, `ISW_BASE_URL`, `ISW_WEBHOOK_SECRET`, `TERMII_API_KEY`, `TERMII_SENDER_ID`, `WA_PHONE_NUMBER_ID`, `WA_TOKEN`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `SENTRY_DSN`, `NOTIFY_MODE` (`console`/`live`) | `npm run dev` boots; `npm run build` passes; no secret committed |
 | sl2 | P0 | **CI and branch rules**: `.github/workflows/ci.yml` running on PRs into `main` and `scope/*` (typecheck, lint, test, build) as the `ci` check; optional `scope-gate` job that fails a `scope/NN-*` → `main` PR while tag `scope-(NN-1)-done` is missing (`contract/*` exempt); `pull_request_template.md`; owner applies Rulesets A and B from WORKFLOW §3 | A direct push to `main` or `scope/01-foundation` is rejected; a slice PR runs `ci`; a collaborator can't merge into `main` |
 | sl3 | P0 | **Design tokens** from Foundations into Tailwind theme + CSS vars: zinc neutrals (`--fg #09090B`, `--fg-2 #52525B`, `--fg-3 #6B6B74`, `--bg #FAFAFA`, `--panel #FFF`, `--sunken #F4F4F5`, `--line #E8E8EB`, `--line-strong #D4D4D8`, `--hover #EFEFF1`), Volt accent (`#D4F86A`, ink `#1A2E05`, soft `#F4FDD6`), status colours (blue moving, amber action, green done, red problem, each with `-bg`/`-fg`), radii **6/8/12/16 only**, 4 px spacing grid, shadows; Geist + Geist Mono via `next/font`; type scale (Title 20/28 600 −2%, Heading 17/24 600, Body 15/22, Secondary 13/18, Caption 12/16 500, Amount 28/34 600 tabular, Code mono 15 600) | A `/_design` page renders every token and matches the Foundations file side by side |
 | sl4 | P0 | **UI primitives** in `src/components/ui/`: Button (primary ink, secondary, ghost, danger; Volt only for scanner/brand), Input with label-above/hint-below at 44 px, PhoneInput (+234), OTPInput (6 boxes), SegmentedControl, Chip/ChipGroup, Toggle/Switch, Select, StatusBadge (dot + label for every parcel status), ListRow, Card, Notice (amber/blue/red/green), Timeline (done/current/upcoming nodes), BottomTabs, Sheet, Money (`₦` + tabular), Code (mono), Avatar initials, KPI tile, DataTable (admin), Sidebar shell (admin) | Each primitive on `/_design`; status badge readable in greyscale |
@@ -46,7 +46,7 @@ Next.js App Router + TypeScript · Tailwind + shadcn/ui · Prisma on Supabase Po
 | sl9 | P0 | **Lib helpers** in `src/lib/`: `env.ts` (zod-validated env, server/client split), `money.ts` (`toKobo`, `formatNaira`, no floats), `ids.ts` (`publicId()` 128-bit url-safe random, `parcelCode()` → `PT-XXXX` from an unambiguous alphabet without 0/O/1/I, `manifestToken()`, `parkCounterToken()`), `dates.ts` (Africa/Lagos formatting, "1 day 22 hours left"), `sign.ts` (jose sign/verify helpers used by 02) | Unit tests for every helper; `parcelCode()` never emits `0 O 1 I` |
 | sl10 | P0 | **Service stubs** (`src/server/<module>/index.ts`) with final exported signatures and fixture/in-memory behaviour, one per module listed in WORKFLOW §6: `auth`, `parks`, `parcels` (`createDraft`, `transition`, `quote`, `issueCollectionCode`, `verifyCollectionCode`, `storageDues`), `notify` (`notify(event, parcelId, extra)`), `uploads`, `payments` (`startPayment`, `handleCallback`, `handleWebhook`, `requery`), `ledger` (`settleParcel`, `balances`, `entries`), `booking`, `recipients`, `vendors`, `handshake`, `dropoff`, `assignment`, `trips`, `roadside`, `tracking`, `arrival`, `collection`, `admin`, `jobs`, `disputes` | A throwaway script calls every stub and gets typed fixture data |
 | sl11 | P0 | **API fixtures** in `src/mocks/` (one per DTO, built from the design copy: PT-7K3Q, PT-4M8C, Musa Ibrahim, Bay C4, ₦2,650 etc.) | Fixtures type-check against `src/contracts` |
-| sl12 | P0 | `docs/` stays as is; root `README.md` with setup steps (env, `pnpm i`, `prisma migrate`, seed, `ogbomoso.localhost:3000`) | Fresh clone reaches the dev server by following the README |
+| sl12 | P0 | `docs/` stays as is; root `README.md` with setup steps (env, `npm install`, `prisma migrate`, seed, `ogbomoso.localhost:3000`) | Fresh clone reaches the dev server by following the README |
 
 ## Schema additions decided here (gaps in PRD §12)
 
