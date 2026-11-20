@@ -4,9 +4,9 @@ Every screen in the 7 ParkTrack UI v2 files, the scope that builds it, and its r
 
 Design files live in [`docs/design/`](../design/) (open in a browser): `ParkTrack UI Foundations.html`, `ParkTrack UI Senderv2.html`, `ParkTrack UI recipient.html`, `ParkTrack UI Origin agent.html`, `ParkTrack UI Driver.html`, `ParkTrack UI Arrival agent.html`, `ParkTrack UI park and platform admin.html`. The PRD is [`docs/ParkTrack_PRD_v1.1.pdf`](../ParkTrack_PRD_v1.1.pdf).
 
-## Foundations → Scope 01
+## Foundations → guidelines, not a screen (Scope 01)
 
-Principles, type scale, colour tokens, radius/spacing, buttons, forms, toggles, lists/timeline/notices. Built as tokens + `src/components/ui/` and shown on `/_design`.
+`ParkTrack UI Foundations.html` is the **rulebook** every screen follows: principles, type scale, colour tokens, radius/spacing, buttons, forms, toggles, lists/timeline/notices. It is **not a screen** in the product and gets no route. Scope 01 turns it into tokens (`src/app/globals.css`) and components (`src/components/ui/`). The screens themselves come from the six role files below.
 
 ## Sender (Senderv2) — host `{park}.parktrack.ng`
 
@@ -82,4 +82,4 @@ Principles, type scale, colour tokens, radius/spacing, buttons, forms, toggles, 
 | P06 | Counter QR poster (A4) | 09 | `/console/park/poster` |
 | P07 | Platform admin: parks and payments | 09 | `/console/platform` |
 
-**Totals:** 44 screens + Foundations. Scope 02: 2 · 04: 2 · 05: 6 · 06: 7 · 07: 12 · 08: 8 · 09: 7.
+**Totals:** 44 screens (Foundations is guidelines only). Scope 02: 2 · 04: 2 · 05: 6 · 06: 7 · 07: 12 · 08: 8 · 09: 7.
