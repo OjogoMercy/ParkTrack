@@ -1,0 +1,31 @@
+# Status check "scope-gate" (see docs/WORKFLOW.md §4).
+# Enforces which branch may open a PR into which: slices only into their own
+# scope branch, and scopes into main only in order. Rules live in
+# .github/scripts/scope-gate.mjs (unit-tested in tests/scope-gate.test.ts).
+name: branch-rules
+
+on:
+  pull_request:
+    branches: [main, "scope/**"]
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  scope-gate:
+    name: scope-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Check branch rules
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: node .github/scripts/scope-gate.mjs
