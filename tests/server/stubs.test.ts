@@ -74,13 +74,9 @@ describe("service stubs", () => {
       valid(z.array(D.ParkRef), await parks.listLiveParks());
     }
 
-    valid(D.ParcelSummary, await parcels.createDraft({} as parcels.DraftInput));
-    valid(
-      D.Quote,
-      await parcels.quote({ routeId: "r", size: "M", podKobo: 0 }),
-    );
-    // parcels.transition / changeDeliveryMode are real since Scope 03 sl1
-    // (need a database); see src/server/parcels/*.test.ts.
+    // parcels.transition / changeDeliveryMode (Scope 03 sl1) and createDraft
+    // / quote (sl2) are real and need a database; see
+    // src/server/parcels/*.test.ts.
     expect(
       (await parcels.verifyCollectionCode("p", "000000", "COUNTER")).ok,
     ).toBe(false);
