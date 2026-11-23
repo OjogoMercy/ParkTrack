@@ -1,13 +1,13 @@
 /**
  * Owned by Scope 03 (docs/scopes/03-parcel-engine.md). Exported names and
  * types are FINAL; callers never change. Being replaced slice by slice:
- * transition / changeDeliveryMode are real (sl1); createDraft and quote
- * (sl2), collection codes (sl3) and storageDues (sl4) still return fixture
+ * transition / changeDeliveryMode (sl1), createDraft / quote (sl2) are
+ * real; collection codes (sl3) and storageDues (sl4) still return fixture
  * data. STUB stays true until every function here is real.
  */
 import "server-only";
 import { after } from "next/server";
-import type { BookingInput } from "@/contracts/api";
+import { BookingInput } from "@/contracts/api";
 import type { ParcelSummary, Quote } from "@/contracts/dto";
 import type {
   CodePurpose,
@@ -23,8 +23,15 @@ import {
 } from "@/contracts/states";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
-import { parcelAwaiting, quoteMedium } from "@/mocks/fixtures";
+import { parcelCode as newParcelCode, publicToken } from "@/lib/ids";
+import { normalizeNgPhone } from "@/lib/phone";
 import { stub } from "@/mocks/stub";
+import {
+  buildQuote,
+  DRAFT_TTL_HOURS,
+  fareFor,
+  prohibitedItemIn,
+} from "./pricing";
 import { notify } from "@/server/notify";
 import { ParcelError } from "./errors";
 import {
@@ -57,20 +64,201 @@ export type DraftInput = BookingInput & {
   createdByUserId: string;
 };
 
-/** Creates a DRAFT with publicId, parcel code and fee snapshot (BOOK-1, HS-1). */
+/**
+ * Creates an unpaid booking (BOOK-1, HS-1), real since Scope 03 sl2.
+ *
+ * Checks the booking against the contract, refuses prohibited items
+ * (BOOK-8), finds the live route from the origin park to the destination,
+ * checks a roadside drop point is on that route, and snapshots the quote.
+ * Assigns a random `publicId` (the only thing in the booking QR) and a
+ * unique `PT-XXXX` code, keeps the draft 24 hours, and records a CREATED
+ * event. Saving the recipient to the sender's list is Scope 05's job.
+ *
+ * Throws ParcelError: invalid_booking / prohibited_item / pod_too_high
+ * (400, with fields), route_not_found (404).
+ */
 export async function createDraft(input: DraftInput): Promise<ParcelSummary> {
-  void input;
-  return stub({ ...parcelAwaiting, status: "DRAFT", dropoffDeadline: null });
+  const parsed = BookingInput.safeParse(input);
+  if (!parsed.success) {
+    const fields: Record<string, string> = {};
+    for (const issue of parsed.error.issues)
+      fields[issue.path.join(".") || "booking"] ??= issue.message;
+    throw new ParcelError(
+      "invalid_booking",
+      "Check the booking details.",
+      400,
+      fields,
+    );
+  }
+  const booking = parsed.data;
+
+  const prohibited = prohibitedItemIn(booking.description);
+  if (prohibited) {
+    throw new ParcelError(
+      "prohibited_item",
+      `ParkTrack can't carry this: ${prohibited.toLowerCase()}.`,
+      400,
+      { description: `Not allowed: ${prohibited}` },
+    );
+  }
+  const recipientPhone = normalizeNgPhone(booking.recipient.phone);
+  if (!recipientPhone) {
+    throw new ParcelError(
+      "invalid_booking",
+      "Enter the recipient's Nigerian phone number.",
+      400,
+      { "recipient.phone": "Enter a Nigerian phone number" },
+    );
+  }
+
+  const route = await liveRoute({
+    originParkId: input.originParkId,
+    destinationParkId: booking.destinationParkId,
+  });
+  let roadsidePointId: string | null = null;
+  if (booking.deliveryMode === "ROADSIDE") {
+    const point = route.roadsidePoints.find(
+      (p) => p.id === booking.roadsidePointId,
+    );
+    if (!point) {
+      throw new ParcelError(
+        "invalid_booking",
+        "Choose a drop point on this route.",
+        400,
+        { roadsidePointId: "Choose a drop point on the route" },
+      );
+    }
+    roadsidePointId = point.id;
+  }
+
+  const q = await quoteForRoute(
+    route,
+    booking.sizeClass,
+    booking.podAmountKobo,
+  );
+  const now = new Date();
+
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const created = await db.$transaction(async (tx) => {
+        const parcel = await tx.parcel.create({
+          data: {
+            publicId: publicToken(),
+            parcelCode: newParcelCode(),
+            senderId: input.senderId,
+            originParkId: route.originParkId,
+            destinationParkId: route.destinationParkId,
+            routeId: route.id,
+            deliveryMode: booking.deliveryMode,
+            roadsidePointId,
+            recipientName: booking.recipient.name,
+            recipientPhone,
+            category: booking.category,
+            description: booking.description,
+            declaredValueKobo: booking.declaredValueKobo,
+            sizeClass: booking.sizeClass,
+            podAmountKobo: q.podAmountKobo,
+            insured: false,
+            fareKobo: q.fareKobo,
+            platformFeeKobo: q.platformFeeKobo,
+            insuranceKobo: q.insuranceKobo,
+            totalKobo: q.totalKobo,
+            status: "DRAFT",
+            createdBy: input.createdBy,
+            createdByUserId: input.createdByUserId,
+            draftExpiresAt: new Date(
+              now.getTime() + DRAFT_TTL_HOURS * 60 * 60 * 1000,
+            ),
+          },
+          include: summaryInclude,
+        });
+        await tx.parcelEvent.create({
+          data: {
+            parcelId: parcel.id,
+            type: "CREATED",
+            toStatus: "DRAFT",
+            actorId: input.createdByUserId,
+            meta: { actor: input.createdBy },
+            createdAt: now,
+          },
+        });
+        return parcel;
+      });
+      return toParcelSummary(created);
+    } catch (e) {
+      // A PT-XXXX code clash (about 1 in a million per parcel): try another.
+      if (isUniqueClash(e) && attempt < 5) continue;
+      throw e;
+    }
+  }
 }
 
-/** Fare by size + platform fee (+ insurance, off for the hackathon); POD capped (BOOK-4). */
+/**
+ * The sender's total for a route and size (BOOK-4), as S03/S04 show it:
+ * fare by size + ₦150 service fee; insurance off (Q13); pay-on-delivery
+ * checked against the ₦200,000 pilot limit (both from `settings`).
+ * Throws ParcelError route_not_found (404) or pod_too_high (400).
+ */
 export async function quote(args: {
   routeId: string;
   size: SizeClass;
   podKobo: number;
 }): Promise<Quote> {
-  void args;
-  return stub(quoteMedium);
+  const route = await liveRoute({ routeId: args.routeId });
+  return quoteForRoute(route, args.size, args.podKobo);
+}
+
+async function liveRoute(
+  where:
+    { routeId: string } | { originParkId: string; destinationParkId: string },
+) {
+  const route = await db.route.findFirst({
+    where: {
+      ...("routeId" in where
+        ? { id: where.routeId }
+        : {
+            originParkId: where.originParkId,
+            destinationParkId: where.destinationParkId,
+          }),
+      active: true,
+      originPark: { status: "LIVE" },
+      destinationPark: { status: "LIVE" },
+    },
+    include: { roadsidePoints: { select: { id: true } } },
+  });
+  if (!route) {
+    throw new ParcelError(
+      "route_not_found",
+      "This park doesn't send parcels to that destination yet.",
+      404,
+      { destinationParkId: "Choose another destination" },
+    );
+  }
+  return route;
+}
+
+async function quoteForRoute(
+  route: Parameters<typeof fareFor>[0],
+  size: SizeClass,
+  podKobo: number,
+): Promise<Quote> {
+  const settings = await db.settings.findUnique({ where: { id: 1 } });
+  return buildQuote({
+    fareKobo: fareFor(route, size),
+    size,
+    platformFeeKobo: settings?.platformFeeKobo ?? 15_000,
+    podKobo,
+    podLimitKobo: settings?.podLimitKobo ?? 20_000_000,
+  });
+}
+
+function isUniqueClash(e: unknown): boolean {
+  return (
+    typeof e === "object" &&
+    e !== null &&
+    "code" in e &&
+    (e as { code?: unknown }).code === "P2002"
+  );
 }
 
 /**
