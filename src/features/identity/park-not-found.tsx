@@ -49,11 +49,11 @@ function Heading({ host }: { host: string | null }) {
 
 async function ParkNotFoundBody() {
   const root = process.env.ROOT_DOMAIN || "localhost:3000";
-  const [requestHeaders, parks] = await Promise.all([
-    headers(),
-    listLiveParks(),
-  ]);
-  const host = hostnameOf(requestHeaders.get("host") ?? "");
+  // Read the request first: the park list is request-time content here, so
+  // the build never runs the database query (CI has no DATABASE_URL). Started
+  // together, the cached listLiveParks() would run during prerender.
+  const host = hostnameOf((await headers()).get("host") ?? "");
+  const parks = await listLiveParks();
   return (
     <>
       <Heading host={host || null} />
