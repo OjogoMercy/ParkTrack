@@ -76,10 +76,7 @@ describe("service stubs", () => {
 
     // parcels.transition / changeDeliveryMode (Scope 03 sl1) and createDraft
     // / quote (sl2) are real and need a database; see
-    // src/server/parcels/*.test.ts.
-    expect(
-      (await parcels.verifyCollectionCode("p", "000000", "COUNTER")).ok,
-    ).toBe(false);
+    // src/server/parcels/*.test.ts. Collection codes too (sl3).
 
     expect((await notify.notify("handshake_complete", "p")).sent).toBe(1);
     valid(
