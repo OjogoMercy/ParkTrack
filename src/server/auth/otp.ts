@@ -1,6 +1,7 @@
 import { sixDigitCode } from "@/lib/ids";
 import { hashCode, verifyCode } from "@/lib/sign";
 import { AuthError } from "./errors";
+import { waitText } from "./rate-limit";
 
 /**
  * Sign-in codes (AUTH-1), decided in docs/reference/open-questions.md:
@@ -16,6 +17,8 @@ import { AuthError } from "./errors";
 export const OTP_TTL_SECONDS = 5 * 60;
 export const OTP_MAX_ATTEMPTS = 5;
 export const OTP_RESEND_SECONDS = 30;
+/** At most this many codes per phone per hour (docs: 5/h per phone). */
+export const OTP_MAX_PER_HOUR = 5;
 
 export type OtpChannel = "WHATSAPP" | "SMS";
 
@@ -48,6 +51,8 @@ export interface OtpStore {
   takeAttempt(id: string, now: Date, maxAttempts: number): Promise<boolean>;
   /** Marks the code used. False if something else used it first. */
   consume(id: string, now: Date): Promise<boolean>;
+  /** When codes were issued for this phone since `since`, oldest first. */
+  issuedSince(phone: string, since: Date): Promise<Date[]>;
 }
 
 export type IssueOtpInput = {
@@ -62,7 +67,9 @@ export type IssueOtpInput = {
 /**
  * Creates and sends a new code. Within 30 seconds of the last code only a
  * switch of channel is allowed ("Send by SMS instead"); repeating the same
- * channel is refused with the seconds left to wait.
+ * channel is refused with the seconds left to wait. At most 5 codes per
+ * phone per hour, whatever the channel (otp_rate_limited); counted from the
+ * stored codes, so the limit holds on every server.
  */
 export async function issueOtp({
   phone,
@@ -84,6 +91,21 @@ export async function issueOtp({
         { retryInSeconds: wait },
       );
     }
+  }
+
+  const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const recent = await store.issuedSince(phone, hourAgo);
+  if (recent.length >= OTP_MAX_PER_HOUR) {
+    const retry = Math.max(
+      1,
+      Math.ceil((recent[0].getTime() + 60 * 60 * 1000 - now.getTime()) / 1000),
+    );
+    throw new AuthError(
+      "otp_rate_limited",
+      `Too many codes for this number. Try again in ${waitText(retry)}.`,
+      429,
+      { retryInSeconds: retry },
+    );
   }
 
   const code = sixDigitCode();
