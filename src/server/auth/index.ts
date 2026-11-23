@@ -1,11 +1,8 @@
 /**
  * Owned by Scope 02 (docs/scopes/02-parks-identity.md). Exported names and
- * types are FINAL; callers never change. Being replaced slice by slice:
- * sendOtp / checkSignInCode (sl3), getSession / requireRole / verifyOtp /
- * signOut (sl4), sendStaffOtp / verifyStaffOtp (sl5), requireParkStaff /
- * parkScope / canSeeParcel (sl6) are real; the recipient links return
- * fixture data until sl7.
- * STUB stays true until every function here is real.
+ * types are FINAL; callers never change. Everything here is real:
+ * sign-in codes (sl3), session (sl4), staff sign-in (sl5), roles and
+ * tenancy (sl6), recipient links (sl7).
  */
 import "server-only";
 import { cookies } from "next/headers";
@@ -27,9 +24,11 @@ import {
 } from "./session";
 import { assertParkStaff, parkScope as tenancyScope } from "./tenancy";
 import { isStaffPhone, loadSessionUser, signInUser } from "./users";
-import { parcelAwaiting, TRACKING_LINK } from "@/mocks/fixtures";
+import { createLinkToken, readLinkToken } from "./recipient-link";
+import { db } from "@/lib/db";
+import { trackingLinkId } from "@/lib/ids";
 
-export const STUB = true;
+export const STUB = false;
 
 export { AuthError, invalidInputResponse } from "./errors";
 
@@ -239,18 +238,71 @@ function cookieOptions() {
   return sessionCookieOptions(env.ROOT_DOMAIN, env.NODE_ENV);
 }
 
-/** Signed recipient tracking link token (AUTH-5). */
+/**
+ * Signed recipient tracking link token (AUTH-5), for parktrack.ng/t/<token>
+ * and /collect. Valid 14 days by default. The token holds the parcel's random
+ * trackingLinkId (created here on first use), never the parcel id. Throws if
+ * the parcel doesn't exist. Format and signature: ./recipient-link.ts.
+ */
 export async function signRecipientLink(
   parcelId: string,
   ttlSeconds = 60 * 60 * 24 * 14,
 ): Promise<string> {
-  void parcelId;
-  void ttlSeconds;
-  return TRACKING_LINK;
+  const linkId = await ensureTrackingLinkId(parcelId);
+  return createLinkToken(
+    linkId,
+    new Date(Date.now() + ttlSeconds * 1000),
+    linkSecret(),
+  );
 }
 
+/**
+ * The parcel behind a recipient link, or null when the token is malformed,
+ * tampered with, expired, or was revoked by revokeRecipientLinks().
+ */
 export async function verifyRecipientLink(
   token: string,
 ): Promise<{ parcelId: string } | null> {
-  return token === TRACKING_LINK ? { parcelId: parcelAwaiting.id } : null;
+  const linkId = readLinkToken(token, linkSecret());
+  if (!linkId) return null;
+  const parcel = await db.parcel.findUnique({
+    where: { trackingLinkId: linkId },
+    select: { id: true },
+  });
+  return parcel ? { parcelId: parcel.id } : null;
+}
+
+/**
+ * Cancels every link sent for this parcel (e.g. the recipient's phone was
+ * corrected and the old number shouldn't keep access). The next
+ * signRecipientLink() makes a new one.
+ */
+export async function revokeRecipientLinks(parcelId: string): Promise<void> {
+  await db.parcel.update({
+    where: { id: parcelId },
+    data: { trackingLinkId: trackingLinkId() },
+  });
+}
+
+async function ensureTrackingLinkId(parcelId: string): Promise<string> {
+  const parcel = await db.parcel.findUnique({
+    where: { id: parcelId },
+    select: { trackingLinkId: true },
+  });
+  if (!parcel) throw new Error(`Parcel ${parcelId} not found.`);
+  if (parcel.trackingLinkId) return parcel.trackingLinkId;
+  // Only set it if still empty, so two links made at once share one id.
+  await db.parcel.updateMany({
+    where: { id: parcelId, trackingLinkId: null },
+    data: { trackingLinkId: trackingLinkId() },
+  });
+  const updated = await db.parcel.findUniqueOrThrow({
+    where: { id: parcelId },
+    select: { trackingLinkId: true },
+  });
+  return updated.trackingLinkId!;
+}
+
+function linkSecret(): string {
+  return requireEnv("LINK_SIGNING_SECRET");
 }
