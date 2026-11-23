@@ -67,7 +67,7 @@ describe("service stubs", () => {
   it("return data that satisfies the contracts", async () => {
     valid(D.SessionUser, await auth.getSession());
     valid(D.SessionUser, await auth.requireRole("AGENT"));
-    valid(A.AuthOtp.response, await auth.sendOtp("+2340000000101"));
+    // auth.sendOtp is real since Scope 02 sl3 (src/server/auth/otp.test.ts).
     valid(
       A.AuthVerify.response,
       await auth.verifyOtp("+2340000000101", "123456"),

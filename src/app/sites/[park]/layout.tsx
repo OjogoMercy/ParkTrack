@@ -9,7 +9,12 @@ import { getPark } from "@/server/parks";
  * <Suspense> (route params are request-time data under Cache Components, and
  * gating {children} on them would block instant navigation). An unknown or
  * non-live park calls notFound(), which src/app/sites/not-found.tsx turns
- * into "park not found" (S13). The park header (S01) is added in sl2.
+ * into "park not found" (S13).
+ *
+ * The park header (S01 top bar) is not rendered here: each page passes
+ * <ParkHeader park={…} /> from @/features/identity/park-header as
+ * <MobileShell topBar>, because the shell owns the sticky top bar and pages
+ * need to swap the trailing "Sign in" for their own controls.
  */
 export default function ParkLayout({
   children,
