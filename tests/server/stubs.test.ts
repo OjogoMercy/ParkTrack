@@ -65,13 +65,8 @@ describe("service stubs", () => {
   });
 
   it("return data that satisfies the contracts", async () => {
-    valid(D.SessionUser, await auth.getSession());
-    valid(D.SessionUser, await auth.requireRole("AGENT"));
-    // auth.sendOtp is real since Scope 02 sl3 (src/server/auth/otp.test.ts).
-    valid(
-      A.AuthVerify.response,
-      await auth.verifyOtp("+2340000000101", "123456"),
-    );
+    // Real since Scope 02 (need a request and database): sendOtp (sl3),
+    // getSession / requireRole / verifyOtp (sl4). See src/server/auth/*.test.ts.
     expect(
       await auth.verifyRecipientLink(await auth.signRecipientLink("p")),
     ).not.toBeNull();

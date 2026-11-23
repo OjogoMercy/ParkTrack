@@ -1,4 +1,17 @@
+import type { z } from "zod";
 import type { ApiError } from "@/contracts/primitives";
+
+/** 400 invalid_input with the first message per field, for bad request bodies. */
+export function invalidInputResponse(
+  error: z.ZodError,
+  message = "Check what you entered and try again.",
+): Response {
+  const fields: Record<string, string> = {};
+  for (const issue of error.issues)
+    fields[issue.path.join(".") || "body"] ??= issue.message;
+  const body: ApiError = { error: { code: "invalid_input", message, fields } };
+  return Response.json(body, { status: 400 });
+}
 
 /**
  * A sign-in or access failure with a stable `code` the screens can react to,
