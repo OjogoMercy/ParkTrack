@@ -2,8 +2,9 @@
  * Owned by Scope 02 (docs/scopes/02-parks-identity.md). Exported names and
  * types are FINAL; callers never change. Being replaced slice by slice:
  * sendOtp / checkSignInCode (sl3), getSession / requireRole / verifyOtp /
- * signOut (sl4) are real; requireParkStaff still returns fixture data until
- * sl6 (tenancy) and the recipient links until sl7.
+ * signOut (sl4), sendStaffOtp / verifyStaffOtp (sl5), requireParkStaff /
+ * parkScope / canSeeParcel (sl6) are real; the recipient links return
+ * fixture data until sl7.
  * STUB stays true until every function here is real.
  */
 import "server-only";
@@ -24,9 +25,9 @@ import {
   SESSION_COOKIE,
   sessionCookieOptions,
 } from "./session";
+import { assertParkStaff, parkScope as tenancyScope } from "./tenancy";
 import { isStaffPhone, loadSessionUser, signInUser } from "./users";
-import { bayoSession, parcelAwaiting, TRACKING_LINK } from "@/mocks/fixtures";
-import { stub } from "@/mocks/stub";
+import { parcelAwaiting, TRACKING_LINK } from "@/mocks/fixtures";
 
 export const STUB = true;
 
@@ -64,24 +65,29 @@ export async function requireRole(...roles: Role[]): Promise<SessionUser> {
   return user;
 }
 
-/** Agent or park admin of this park (tenant separation). */
+/**
+ * The signed-in agent or park admin of this park (tenant separation). Use on
+ * every park-staff action that names a park. Throws AuthError signed_out
+ * (401), wrong_role (403) or wrong_park (403). Platform admins aren't park
+ * staff: platform screens use requireRole("PLATFORM_ADMIN").
+ */
 export async function requireParkStaff(parkId: string): Promise<SessionUser> {
-  return stub({
-    ...bayoSession,
-    park: { ...bayoSession.park!, id: parkId },
-  });
+  const user = await requireRole("AGENT", "PARK_ADMIN");
+  assertParkStaff(user, parkId);
+  return user;
 }
 
-/** Prisma where-fragment limiting parcels to what this user may see. */
+/**
+ * Prisma where-fragment limiting parcels to what this user may see. AND it
+ * into every parcel query made for a signed-in person, e.g.
+ * `db.parcel.findMany({ where: { AND: [parkScope(user), { status }] } })`.
+ * Rules in ./tenancy.ts.
+ */
 export function parkScope(user: SessionUser): Prisma.ParcelWhereInput {
-  if (user.role === "PLATFORM_ADMIN") return {};
-  if (user.park) {
-    return {
-      OR: [{ originParkId: user.park.id }, { destinationParkId: user.park.id }],
-    };
-  }
-  return { senderId: user.id };
+  return tenancyScope(user);
 }
+
+export { canSeeParcel, type ParcelTenancy } from "./tenancy";
 
 /**
  * Sends a 6-digit sign-in code (AUTH-1) through @/server/notify. Takes the
