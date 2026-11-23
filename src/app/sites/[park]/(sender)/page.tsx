@@ -1,37 +1,54 @@
 import { Suspense } from "react";
+import { MobileShell } from "@/components/ui/shells";
+import { OpenNowBadge } from "@/features/identity/open-now-badge";
+import {
+  ParkHeader,
+  ParkHeaderSkeleton,
+} from "@/features/identity/park-header";
 import { getPark } from "@/server/parks";
 
 /**
- * PLACEHOLDER park home, so routing can be checked before Scope 05 builds
- * the real one (S01). Scope 05 replaces this file.
+ * PLACEHOLDER park home, so routing and the park header can be checked before
+ * Scope 05 builds the real S01. Scope 05 replaces this file.
  *
- * Pattern for park pages under Cache Components: the page itself renders
+ * Pattern for park pages under Cache Components: the page renders
  * synchronously and reads `params` inside its own <Suspense>, so navigation
- * stays instant. Park data comes from the cached getPark().
+ * stays instant. Park data comes from the cached getPark(); "open now" is a
+ * client component.
  */
 export default function ParkHomePlaceholder({
   params,
 }: PageProps<"/sites/[park]">) {
   return (
-    <main className="mx-auto flex min-h-dvh max-w-[430px] flex-col gap-2 p-5">
-      <Suspense fallback={<p className="text-small text-fg-3">Loading…</p>}>
-        <ParkSummary params={params} />
-      </Suspense>
-    </main>
+    <Suspense
+      fallback={
+        <MobileShell topBar={<ParkHeaderSkeleton />}>
+          <span className="sr-only">Loading park</span>
+        </MobileShell>
+      }
+    >
+      <ParkHome params={params} />
+    </Suspense>
   );
 }
 
-async function ParkSummary({ params }: { params: Promise<{ park: string }> }) {
+async function ParkHome({ params }: { params: Promise<{ park: string }> }) {
   const { park } = await params;
   const data = await getPark(park);
+  if (!data) return null; // the layout shows "park not found"
   return (
-    <>
-      <p className="text-caption text-fg-3">{park}.parktrack.ng</p>
-      <h1 className="text-title">{data?.name}</h1>
-      <p className="text-small text-fg-3">
-        {data?.routes.length} route{data?.routes.length === 1 ? "" : "s"} from
-        this park. The park home (S01) arrives in Scope 05.
-      </p>
-    </>
+    <MobileShell
+      topBar={<ParkHeader park={data} />}
+      className="gap-5 px-4 pt-5 pb-6"
+    >
+      <div className="flex flex-col gap-2 px-1">
+        <OpenNowBadge hours={data.openingHours} className="self-start" />
+        <h1 className="text-title">Send a parcel from {data.city}</h1>
+        <p className="text-sub text-fg-2">
+          {data.routes.length} route{data.routes.length === 1 ? "" : "s"} from
+          this park. The full park home (S01) arrives in Scope 05.
+        </p>
+      </div>
+    </MobileShell>
   );
 }
