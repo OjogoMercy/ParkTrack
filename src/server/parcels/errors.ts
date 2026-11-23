@@ -8,7 +8,12 @@ export type ParcelErrorCode =
   | "route_not_found"
   | "invalid_booking"
   | "pod_too_high"
-  | "prohibited_item";
+  | "prohibited_item"
+  | "code_not_allowed"
+  | "code_resend_too_soon"
+  | "code_missing"
+  | "code_used"
+  | "code_expired";
 
 /**
  * A refused parcel operation with a stable `code`, an HTTP status and a

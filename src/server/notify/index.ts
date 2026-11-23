@@ -19,7 +19,12 @@ export async function notify(
   extra: Record<string, string | number> = {},
 ): Promise<{ sent: number }> {
   if (process.env.NODE_ENV !== "test") {
-    console.info(`[notify stub] ${event}`, parcelId ?? "", extra);
+    // Codes (collection, handshake) only appear in development logs.
+    const shown =
+      process.env.NODE_ENV === "production" && "code" in extra
+        ? { ...extra, code: "******" }
+        : extra;
+    console.info(`[notify stub] ${event}`, parcelId ?? "", shown);
   }
   return stub({ sent: 1 });
 }

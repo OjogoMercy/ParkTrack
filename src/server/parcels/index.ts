@@ -1,8 +1,8 @@
 /**
  * Owned by Scope 03 (docs/scopes/03-parcel-engine.md). Exported names and
  * types are FINAL; callers never change. Being replaced slice by slice:
- * transition / changeDeliveryMode (sl1), createDraft / quote (sl2) are
- * real; collection codes (sl3) and storageDues (sl4) still return fixture
+ * transition / changeDeliveryMode (sl1), createDraft / quote (sl2) and
+ * collection codes (sl3) are real; storageDues (sl4) still returns fixture
  * data. STUB stays true until every function here is real.
  */
 import "server-only";
@@ -23,8 +23,23 @@ import {
 } from "@/contracts/states";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
-import { parcelCode as newParcelCode, publicToken } from "@/lib/ids";
-import { normalizeNgPhone } from "@/lib/phone";
+import { requireEnv } from "@/lib/env";
+import {
+  parcelCode as newParcelCode,
+  publicToken,
+  sixDigitCode,
+} from "@/lib/ids";
+import { maskPhone, normalizeNgPhone } from "@/lib/phone";
+import { hashCode, verifyCode } from "@/lib/sign";
+import {
+  afterWrongCode,
+  CODE_MAX_WRONG,
+  CODE_RESEND_SECONDS,
+  codeContext,
+  codeExpiredReason,
+  codeExpiry,
+  issueProblem,
+} from "./codes";
 import { stub } from "@/mocks/stub";
 import {
   buildQuote,
@@ -528,31 +543,217 @@ function afterResponse(work: () => Promise<void>): void {
   }
 }
 
-/** 6-digit code, stored hashed; counter codes expire in 10 minutes. */
+/**
+ * Sends the recipient a new 6-digit collection code (COL-1, COL-2), real
+ * since Scope 03 sl3. Counter codes last 10 minutes; roadside codes last
+ * until the trip ends (Q4). Any earlier code for the same purpose is
+ * cancelled. The code is stored only as a hash and never logged in
+ * events; it goes to the recipient's phone with the collection_started
+ * message. Rules in ./codes.ts.
+ *
+ * Throws ParcelError: parcel_not_found (404), code_not_allowed (409: wrong
+ * stage, or the parcel is locked), code_resend_too_soon (429).
+ */
 export async function issueCollectionCode(
   parcelId: string,
   purpose: CodePurpose,
 ): Promise<{ sentTo: string; expiresAt: string | null }> {
-  void parcelId;
-  return stub({
-    sentTo: "+234 000 *** 0201",
-    expiresAt: purpose === "COUNTER" ? "2026-11-22T09:52:00+00:00" : null,
+  const now = new Date();
+  const code = sixDigitCode();
+  const result = await db.$transaction(async (tx) => {
+    await lockParcelRow(tx, parcelId);
+    const parcel = await tx.parcel.findUnique({
+      where: { id: parcelId },
+      select: {
+        status: true,
+        deliveryMode: true,
+        locked: true,
+        recipientPhone: true,
+      },
+    });
+    if (!parcel) {
+      throw new ParcelError("parcel_not_found", "Parcel not found.", 404);
+    }
+    const problem = issueProblem(parcel, purpose);
+    if (problem) throw new ParcelError("code_not_allowed", problem, 409);
+
+    const last = await tx.collectionCode.findFirst({
+      where: { parcelId, purpose },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    const wait = last
+      ? Math.ceil(
+          CODE_RESEND_SECONDS -
+            (now.getTime() - last.createdAt.getTime()) / 1000,
+        )
+      : 0;
+    if (wait > 0) {
+      throw new ParcelError(
+        "code_resend_too_soon",
+        `A code was just sent. Wait ${wait} seconds before asking again.`,
+        429,
+      );
+    }
+
+    await tx.collectionCode.updateMany({
+      where: { parcelId, purpose, usedAt: null, voidedAt: null },
+      data: { voidedAt: now },
+    });
+    const expiresAt = codeExpiry(purpose, now);
+    await tx.collectionCode.create({
+      data: {
+        parcelId,
+        purpose,
+        codeHash: hashCode(code, codeContext(parcelId, purpose), codeSecret()),
+        sentToPhone: parcel.recipientPhone,
+        expiresAt,
+        createdAt: now,
+      },
+    });
+    await tx.parcelEvent.create({
+      data: {
+        parcelId,
+        type: "COLLECTION_CODE_ISSUED",
+        fromStatus: parcel.status,
+        toStatus: parcel.status,
+        meta: { purpose, expiresAt: expiresAt?.toISOString() ?? null },
+        createdAt: now,
+      },
+    });
+    return {
+      sentTo: maskPhone(parcel.recipientPhone),
+      expiresAt: expiresAt?.toISOString() ?? null,
+    };
   });
+
+  afterResponse(() =>
+    notify("collection_started", parcelId, {
+      code,
+      purpose,
+      ...(result.expiresAt ? { expiresAt: result.expiresAt } : {}),
+    }).then(() => {}),
+  );
+  return result;
 }
 
-/** Counts attempts and locks after 5 wrong codes (COL-4). */
+/**
+ * Checks a collection code (COL-4), real since Scope 03 sl3. A right code
+ * is used up; a wrong one counts against the parcel, and the 5th wrong code
+ * (across every code sent for that purpose) locks the parcel. Checks for
+ * one parcel run one at a time, so parallel guesses can't beat the limit.
+ *
+ * Returns { ok, attemptsLeft, locked }. Throws ParcelError:
+ * parcel_not_found (404), code_missing / code_used / code_expired (409).
+ */
 export async function verifyCollectionCode(
   parcelId: string,
   code: string,
   purpose: CodePurpose,
 ): Promise<{ ok: boolean; attemptsLeft: number; locked: boolean }> {
-  void parcelId;
-  void purpose;
-  return stub({
-    ok: code === "482913" || code === "715204",
-    attemptsLeft: 5,
-    locked: false,
+  const now = new Date();
+  return db.$transaction(async (tx) => {
+    await lockParcelRow(tx, parcelId);
+    const parcel = await tx.parcel.findUnique({
+      where: { id: parcelId },
+      select: { status: true, deliveryMode: true, locked: true },
+    });
+    if (!parcel) {
+      throw new ParcelError("parcel_not_found", "Parcel not found.", 404);
+    }
+    if (parcel.locked) return { ok: false, attemptsLeft: 0, locked: true };
+
+    const active = await tx.collectionCode.findFirst({
+      where: { parcelId, purpose, usedAt: null, voidedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!active) {
+      const latest = await tx.collectionCode.findFirst({
+        where: { parcelId, purpose },
+        orderBy: { createdAt: "desc" },
+        select: { usedAt: true },
+      });
+      throw latest?.usedAt
+        ? new ParcelError(
+            "code_used",
+            "This code was already used. Ask for a new one if needed.",
+            409,
+          )
+        : new ParcelError(
+            "code_missing",
+            "No code has been sent for this parcel. Ask for a new one.",
+            409,
+          );
+    }
+    const expired = codeExpiredReason(active, parcel, purpose, now);
+    if (expired) throw new ParcelError("code_expired", expired, 409);
+
+    const { _sum } = await tx.collectionCode.aggregate({
+      where: { parcelId, purpose },
+      _sum: { attempts: true },
+    });
+    const wrongBefore = _sum.attempts ?? 0;
+
+    const right =
+      /^\d{6}$/.test(code) &&
+      verifyCode(
+        code,
+        codeContext(parcelId, purpose),
+        active.codeHash,
+        codeSecret(),
+      );
+    if (right) {
+      await tx.collectionCode.update({
+        where: { id: active.id },
+        data: { usedAt: now },
+      });
+      return {
+        ok: true,
+        attemptsLeft: Math.max(0, CODE_MAX_WRONG - wrongBefore),
+        locked: false,
+      };
+    }
+
+    // `attempts` counts wrong codes only.
+    await tx.collectionCode.update({
+      where: { id: active.id },
+      data: { attempts: { increment: 1 } },
+    });
+    const outcome = afterWrongCode(wrongBefore);
+    if (outcome.locked) {
+      await tx.parcel.update({
+        where: { id: parcelId },
+        data: { locked: true },
+      });
+      await tx.parcelEvent.create({
+        data: {
+          parcelId,
+          type: "NOTE",
+          fromStatus: parcel.status,
+          toStatus: parcel.status,
+          note: `Locked after ${CODE_MAX_WRONG} wrong collection codes`,
+          meta: { purpose, locked: true },
+          createdAt: now,
+        },
+      });
+    }
+    return { ok: false, ...outcome };
   });
+}
+
+/**
+ * Takes a row lock on the parcel for the rest of the transaction, so code
+ * issues and checks for one parcel happen one at a time.
+ */
+async function lockParcelRow(
+  tx: Prisma.TransactionClient,
+  parcelId: string,
+): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM parcels WHERE id = ${parcelId} FOR UPDATE`;
+}
+
+function codeSecret(): string {
+  return requireEnv("AUTH_JWT_SECRET");
 }
 
 /** Storage owed: 0 inside the free window (from the arrival notice), then daily rate (COL-6). */
