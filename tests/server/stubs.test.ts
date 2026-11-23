@@ -58,25 +58,21 @@ function valid(schema: z.ZodType, value: unknown) {
 describe("service stubs", () => {
   it("exist for every module in the ownership table, and are marked STUB", () => {
     expect(Object.keys(modules).sort()).toEqual(Object.keys(STUB_OWNER).sort());
+    // Each module exports STUB: true while it is the Scope 01 stub, false
+    // once its owning scope has replaced it with the real implementation.
     for (const [name, mod] of Object.entries(modules))
-      expect(mod.STUB, name).toBe(true);
+      expect(typeof mod.STUB, name).toBe("boolean");
   });
 
   it("return data that satisfies the contracts", async () => {
-    valid(D.SessionUser, await auth.getSession());
-    valid(D.SessionUser, await auth.requireRole("AGENT"));
-    valid(A.AuthOtp.response, await auth.sendOtp("+2340000000101"));
-    valid(
-      A.AuthVerify.response,
-      await auth.verifyOtp("+2340000000101", "123456"),
-    );
-    expect(
-      await auth.verifyRecipientLink(await auth.signRecipientLink("p")),
-    ).not.toBeNull();
+    // auth is real since Scope 02 (STUB = false); its tests are in
+    // src/server/auth/*.test.ts. parkScope needs no request or database:
     expect(auth.parkScope(F.bayoSession)).toHaveProperty("OR");
 
-    valid(D.ParkPublic, await parks.currentPark());
-    valid(z.array(D.ParkRef), await parks.listLiveParks());
+    if (parks.STUB) {
+      valid(D.ParkPublic, await parks.currentPark());
+      valid(z.array(D.ParkRef), await parks.listLiveParks());
+    }
 
     valid(D.ParcelSummary, await parcels.createDraft({} as parcels.DraftInput));
     valid(
@@ -209,8 +205,10 @@ describe("service stubs", () => {
   });
 
   it("never hands out shared fixture objects (callers can't corrupt them)", async () => {
-    const a = await parks.currentPark();
-    a!.name = "Changed";
-    expect((await parks.currentPark())!.name).toBe("Ogbomoso Motor Park");
+    // Uses the stub helper directly, so it keeps working as modules go real.
+    const { stub } = await import("@/mocks/stub");
+    const a = await stub(F.parkOgbomoso);
+    a.name = "Changed";
+    expect((await stub(F.parkOgbomoso)).name).toBe("Ogbomoso Motor Park");
   });
 });

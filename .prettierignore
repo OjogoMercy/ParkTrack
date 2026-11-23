@@ -6,3 +6,7 @@ next-env.d.ts
 docs
 src/generated
 prisma/migrations
+# Agent skills installed by tooling (vendored, not project code)
+.agents
+.claude
+skills-lock.json
