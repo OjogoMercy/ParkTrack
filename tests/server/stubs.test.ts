@@ -79,13 +79,8 @@ describe("service stubs", () => {
       D.Quote,
       await parcels.quote({ routeId: "r", size: "M", podKobo: 0 }),
     );
-    valid(
-      D.ParcelSummary,
-      await parcels.transition("p", "RECEIVED_AT_ORIGIN", { actor: "AGENT" }),
-    );
-    await expect(
-      parcels.transition("p", "SETTLED", { actor: "AGENT" }),
-    ).rejects.toThrow(/not allowed/);
+    // parcels.transition / changeDeliveryMode are real since Scope 03 sl1
+    // (need a database); see src/server/parcels/*.test.ts.
     expect(
       (await parcels.verifyCollectionCode("p", "000000", "COUNTER")).ok,
     ).toBe(false);
