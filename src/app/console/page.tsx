@@ -1,16 +1,24 @@
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { consoleHome, consolePublicPath } from "@/features/identity/redirects";
+import { getSession } from "@/server/auth";
+
 /**
- * app.parktrack.ng home. PLACEHOLDER until Scope 02 sl5, which signs staff
- * in and sends each role to its own console (counter, arrivals, driver,
- * park, platform).
+ * app.parktrack.ng/ — sends each signed-in staff member to their role's home
+ * (agent → /counter, driver → /driver, park admin → /park, platform admin →
+ * /platform). Signed-out visitors never get here: src/proxy.ts sends them to
+ * /signin first. A sender (no console role) goes back to sign-in.
  */
 export default function ConsoleHome() {
   return (
-    <main className="mx-auto flex min-h-dvh max-w-[430px] flex-col gap-2 p-5">
-      <p className="text-caption text-fg-3">app.parktrack.ng</p>
-      <h1 className="text-title">ParkTrack console</h1>
-      <p className="text-small text-fg-3">
-        Staff sign-in arrives in Scope 02 sl5.
-      </p>
-    </main>
+    <Suspense fallback={null}>
+      <RoleRedirect />
+    </Suspense>
   );
+}
+
+async function RoleRedirect(): Promise<null> {
+  const user = await getSession();
+  const home = user ? consoleHome(user.role) : null;
+  redirect(home ? consolePublicPath(home) : "/signin");
 }

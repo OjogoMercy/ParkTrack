@@ -24,6 +24,30 @@ export async function proxy(request: NextRequest) {
   if (decision.action === "not_found") {
     return new NextResponse("Not found", { status: 404 });
   }
+
+  // Signature and expiry only (no database); getSession() still checks the
+  // account on every read.
+  const secret = process.env.AUTH_JWT_SECRET;
+  const claims = secret
+    ? await readSessionToken(request.cookies.get(SESSION_COOKIE)?.value, secret)
+    : null;
+
+  // No console page renders for a signed-out visitor: send them to sign in
+  // and back to where they were going.
+  if (
+    decision.action === "rewrite" &&
+    decision.pathname.startsWith("/console") &&
+    !CONSOLE_PUBLIC.has(decision.pathname) &&
+    !claims
+  ) {
+    const url = request.nextUrl.clone();
+    const original = request.nextUrl.pathname + request.nextUrl.search;
+    url.pathname = "/signin";
+    url.search =
+      original === "/" ? "" : `?next=${encodeURIComponent(original)}`;
+    return NextResponse.redirect(url);
+  }
+
   let response: NextResponse;
   if (decision.action === "next") {
     response = NextResponse.next();
@@ -32,31 +56,21 @@ export async function proxy(request: NextRequest) {
     url.pathname = decision.pathname;
     response = NextResponse.rewrite(url);
   }
-  await refreshSession(request, response, rootDomain);
+
+  // Rolling 30-day session: once the cookie is a day old, re-issue it so
+  // people who keep using the app stay signed in.
+  if (secret && claims && needsRefresh(claims)) {
+    response.cookies.set(
+      SESSION_COOKIE,
+      await createSessionToken(claims.userId, secret),
+      sessionCookieOptions(rootDomain),
+    );
+  }
   return response;
 }
 
-/**
- * Rolling 30-day session: once the cookie is a day old, re-issue it so people
- * who keep using the app stay signed in. Only checks the signature here (no
- * database); getSession() still checks the account on every read.
- */
-async function refreshSession(
-  request: NextRequest,
-  response: NextResponse,
-  rootDomain: string,
-) {
-  const secret = process.env.AUTH_JWT_SECRET;
-  const token = request.cookies.get(SESSION_COOKIE)?.value;
-  if (!secret || !token) return;
-  const claims = await readSessionToken(token, secret);
-  if (!claims || !needsRefresh(claims)) return;
-  response.cookies.set(
-    SESSION_COOKIE,
-    await createSessionToken(claims.userId, secret),
-    sessionCookieOptions(rootDomain),
-  );
-}
+/** Console paths a signed-out visitor may open. */
+const CONSOLE_PUBLIC = new Set(["/console/signin"]);
 
 export const config = {
   // Everything except API routes, Next internals and static files.

@@ -132,3 +132,57 @@ describe("proxy rolling refresh", () => {
     expect((await visit("junk")).cookies.get(SESSION_COOKIE)).toBeUndefined();
   });
 });
+
+describe("proxy console guard", () => {
+  beforeEach(() => {
+    vi.stubEnv("AUTH_JWT_SECRET", SECRET);
+    vi.stubEnv("ROOT_DOMAIN", "parktrack.localhost:3000");
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  async function open(path: string, token?: string) {
+    const { proxy } = await import("@/proxy");
+    const host = "app.parktrack.localhost:3000";
+    return proxy(
+      new NextRequest(`http://${host}${path}`, {
+        headers: {
+          host,
+          ...(token ? { cookie: `${SESSION_COOKIE}=${token}` } : {}),
+        },
+      }),
+    );
+  }
+
+  it("sends signed-out visitors to sign in, then back", async () => {
+    const res = await open("/counter/scan?x=1");
+    expect(res.status).toBe(307);
+    const to = new URL(res.headers.get("location")!);
+    expect(to.pathname).toBe("/signin");
+    expect(to.searchParams.get("next")).toBe("/counter/scan?x=1");
+
+    const home = new URL((await open("/")).headers.get("location")!);
+    expect(home.pathname + home.search).toBe("/signin");
+
+    const junk = await open("/counter", "junk");
+    expect(junk.status).toBe(307);
+  });
+
+  it("lets the sign-in page and signed-in staff through", async () => {
+    expect((await open("/signin")).headers.get("location")).toBeNull();
+    const token = await createSessionToken("user_1", SECRET);
+    const res = await open("/counter", token);
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.headers.get("x-middleware-rewrite")).toContain(
+      "/console/counter",
+    );
+  });
+
+  it("doesn't guard park pages", async () => {
+    const { proxy } = await import("@/proxy");
+    const host = "ogbomoso.parktrack.localhost:3000";
+    const res = await proxy(
+      new NextRequest(`http://${host}/send`, { headers: { host } }),
+    );
+    expect(res.headers.get("location")).toBeNull();
+  });
+});
