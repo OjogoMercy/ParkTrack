@@ -65,11 +65,8 @@ describe("service stubs", () => {
   });
 
   it("return data that satisfies the contracts", async () => {
-    // Real since Scope 02 (need a request and database): sendOtp (sl3),
-    // getSession / requireRole / verifyOtp (sl4). See src/server/auth/*.test.ts.
-    expect(
-      await auth.verifyRecipientLink(await auth.signRecipientLink("p")),
-    ).not.toBeNull();
+    // auth is real since Scope 02 (STUB = false); its tests are in
+    // src/server/auth/*.test.ts. parkScope needs no request or database:
     expect(auth.parkScope(F.bayoSession)).toHaveProperty("OR");
 
     if (parks.STUB) {
