@@ -1,14 +1,17 @@
-import Link from "next/link";
-import { buttonVariants } from "@/components/ui/button";
+import { Suspense } from "react";
 import { TopBar } from "@/components/ui/shells";
 import { parkHostLabel } from "@/server/parks/host";
+import { HeaderAccount, HeaderAccountSkeleton } from "./header-account";
 import { ParkInitials } from "./logo";
 
 /**
- * Park top bar from S01/S08: initials tile, park name, subdomain, and a
- * "Sign in" button on the right. Pages on a park subdomain pass it to
- * <MobileShell topBar={…}>. Pass `trailing` to replace "Sign in" (for
- * example with the signed-in user's avatar, from Scope 02 sl4).
+ * Park top bar from S01/S08: initials tile, park name, subdomain, and on the
+ * right either "Sign in" or the signed-in person's initials (linking to
+ * /account). Pages on a park subdomain pass it to <MobileShell topBar={…}>.
+ * Pass `trailing` to replace the right side with the page's own control.
+ *
+ * The account slot reads the session inside its own <Suspense>, so the rest
+ * of the bar stays in the cached shell and renders instantly.
  */
 export function ParkHeader({
   park,
@@ -29,17 +32,14 @@ export function ParkHeader({
     : "/signin";
   return (
     <TopBar
-      leading={<ParkInitials name={park.name} />}
+      leading={<ParkInitials name={park.slug} />}
       title={<span className="text-[15px]">{park.name}</span>}
       sub={host}
       trailing={
         trailing ?? (
-          <Link
-            href={signInHref}
-            className={buttonVariants({ variant: "secondary", size: "sm" })}
-          >
-            Sign in
-          </Link>
+          <Suspense fallback={<HeaderAccountSkeleton />}>
+            <HeaderAccount signInHref={signInHref} />
+          </Suspense>
         )
       }
     />

@@ -50,13 +50,20 @@ export function ParkInitials({
   name: string;
   className?: string;
 }) {
-  const letters = name
-    .replace(/[^A-Za-z ]/g, "")
+  // One word (a park slug, as the designs use: "ogbomoso" → "OG") gives its
+  // first two letters; several words give their first letters.
+  const words = name
+    .replace(/[^A-Za-z ]/g, " ")
     .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
+    .filter(Boolean);
+  const letters = (
+    words.length === 1
+      ? words[0].slice(0, 2)
+      : words
+          .slice(0, 2)
+          .map((w) => w[0])
+          .join("")
+  ).toUpperCase();
   return (
     <span
       aria-hidden

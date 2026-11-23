@@ -51,7 +51,7 @@ export function ParkSearchList({ parks }: { parks: ParkListItem[] }) {
                   href={p.url}
                   className="flex items-center gap-3 px-4 py-3 no-underline hover:bg-bg"
                 >
-                  <ParkInitials name={p.displayName} />
+                  <ParkInitials name={p.slug} />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="truncate text-sub font-medium">
                       {p.displayName}
