@@ -41,6 +41,7 @@ Design files live in [`docs/design/`](../design/) (open in a browser): `ParkTrac
 
 | ID | Screen | Scope | Route |
 |---|---|---|---|
+| — | Staff sign-in (S02 layout, all console roles; then each role's home, Q29) | 02 | `/console/signin` (browser: `app.parktrack.ng/signin`) |
 | A01 | Counter: today | 06 | `/console/counter` |
 | A02 | Scan sender QR | 06 | `/console/counter/scan` |
 | A03 | Check in: size, write code, photo | 06 | `/console/counter/check-in/[publicId]` |
