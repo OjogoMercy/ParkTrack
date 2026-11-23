@@ -24,7 +24,7 @@ import {
   SESSION_COOKIE,
   sessionCookieOptions,
 } from "./session";
-import { loadSessionUser, signInUser } from "./users";
+import { isStaffPhone, loadSessionUser, signInUser } from "./users";
 import { bayoSession, parcelAwaiting, TRACKING_LINK } from "@/mocks/fixtures";
 import { stub } from "@/mocks/stub";
 
@@ -175,9 +175,47 @@ export async function verifyOtp(
 ): Promise<{ user: SessionUser; isNew: boolean }> {
   const { phone: e164 } = await checkSignInCode(phone, code);
   const result = await signInUser(e164, signupParkId);
-  const token = await createSessionToken(result.user.id, sessionSecret());
-  (await cookies()).set(SESSION_COOKIE, token, cookieOptions());
+  await setSessionCookie(result.user.id);
   return result;
+}
+
+/**
+ * Console sign-in (app.ROOT_DOMAIN): like sendOtp, but only for staff
+ * (agents, drivers, park and platform admins). Unknown phones and senders
+ * get not_staff and no code is sent, so the console never creates accounts.
+ */
+export async function sendStaffOtp(
+  phone: string,
+  channel: "WHATSAPP" | "SMS" = "WHATSAPP",
+): ReturnType<typeof sendOtp> {
+  if (!(await isStaffPhone(toE164(phone)))) throw notStaff();
+  return sendOtp(phone, channel);
+}
+
+/** Console sign-in: checks the code and signs in an existing staff member. */
+export async function verifyStaffOtp(
+  phone: string,
+  code: string,
+): Promise<{ user: SessionUser; isNew: false }> {
+  const e164 = toE164(phone);
+  if (!(await isStaffPhone(e164))) throw notStaff();
+  await checkSignInCode(e164, code);
+  const { user } = await signInUser(e164, undefined);
+  await setSessionCookie(user.id);
+  return { user, isNew: false };
+}
+
+function notStaff() {
+  return new AuthError(
+    "not_staff",
+    "This number isn't on a ParkTrack staff account. Senders sign in on their park's page. If you work at a park, ask your park admin to add you.",
+    403,
+  );
+}
+
+async function setSessionCookie(userId: string): Promise<void> {
+  const token = await createSessionToken(userId, sessionSecret());
+  (await cookies()).set(SESSION_COOKIE, token, cookieOptions());
 }
 
 /** Clears the session cookie on the root domain (every subdomain). */

@@ -44,6 +44,15 @@ export async function loadSessionUser(
   return user && user.status === "ACTIVE" ? toSessionUser(user) : null;
 }
 
+/** An agent, driver or admin account that isn't deactivated. */
+export async function isStaffPhone(phone: string): Promise<boolean> {
+  const user = await db.user.findUnique({
+    where: { phone },
+    select: { role: true, status: true },
+  });
+  return !!user && user.role !== "SENDER" && user.status !== "DEACTIVATED";
+}
+
 /**
  * The account for a phone that just proved it owns the number: creates a
  * sender if new, with the park they signed up through (AUTH-3). An existing
