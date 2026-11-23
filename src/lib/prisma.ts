@@ -17,6 +17,9 @@ export function createPrismaClient(
       "DATABASE_URL is not set. Copy .env.example to .env.local and add your Supabase connection strings.",
     );
   }
-  const adapter = new PrismaPg({ connectionString });
+  // Optional pool size. Set DATABASE_POOL_MAX=1 for the local `prisma dev`
+  // database, which accepts one connection at a time. Leave unset for Supabase.
+  const max = Number(process.env.DATABASE_POOL_MAX) || undefined;
+  const adapter = new PrismaPg({ connectionString, ...(max ? { max } : {}) });
   return new PrismaClient({ adapter });
 }
