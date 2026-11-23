@@ -1,10 +1,14 @@
 /**
  * Owned by Scope 02 (docs/scopes/02-parks-identity.md). Exported names and
  * types are FINAL; callers never change. Being replaced slice by slice:
- * sendOtp / checkSignInCode are real (sl3); the rest still return fixture
- * data until sl4 (session), sl6 (roles, tenancy) and sl7 (recipient links).
+ * sendOtp / checkSignInCode (sl3), getSession / requireRole / verifyOtp /
+ * signOut (sl4) are real; requireParkStaff still returns fixture data until
+ * sl6 (tenancy) and the recipient links until sl7.
  * STUB stays true until every function here is real.
  */
+import "server-only";
+import { cookies } from "next/headers";
+import { cache } from "react";
 import type { Role } from "@/contracts/enums";
 import type { SessionUser } from "@/contracts/dto";
 import type { Prisma } from "@/generated/prisma/client";
@@ -15,25 +19,49 @@ import { AuthError } from "./errors";
 import { checkOtp, issueOtp, type OtpChannel } from "./otp";
 import { prismaOtpStore } from "./otp-store";
 import {
-  bayoSession,
-  parcelAwaiting,
-  toluSession,
-  TRACKING_LINK,
-} from "@/mocks/fixtures";
+  createSessionToken,
+  readSessionToken,
+  SESSION_COOKIE,
+  sessionCookieOptions,
+} from "./session";
+import { loadSessionUser, signInUser } from "./users";
+import { bayoSession, parcelAwaiting, TRACKING_LINK } from "@/mocks/fixtures";
 import { stub } from "@/mocks/stub";
 
 export const STUB = true;
 
-export { AuthError } from "./errors";
+export { AuthError, invalidInputResponse } from "./errors";
 
-/** Current signed-in user from the session cookie, or null. */
-export async function getSession(): Promise<SessionUser | null> {
-  return stub(toluSession);
-}
+/**
+ * Current signed-in user from the session cookie, or null. Checks the
+ * signature and expiry, then that the account still exists and is ACTIVE,
+ * so a deactivated user is signed out on their next request.
+ *
+ * Reads cookies, so in pages call it inside a <Suspense> boundary, never at
+ * the top of a layout (see docs: authentication-with-cache-components).
+ * Deduplicated per request.
+ */
+export const getSession = cache(async (): Promise<SessionUser | null> => {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const claims = await readSessionToken(token, sessionSecret());
+  return claims ? loadSessionUser(claims.userId) : null;
+});
 
-/** Throws a 401/403 unless the signed-in user has one of the roles. */
+/**
+ * The signed-in user if they have one of the roles. Throws AuthError
+ * signed_out (401) or wrong_role (403).
+ */
 export async function requireRole(...roles: Role[]): Promise<SessionUser> {
-  return stub(roles.includes("AGENT") ? bayoSession : toluSession);
+  const user = await getSession();
+  if (!user) throw new AuthError("signed_out", "Sign in to continue.", 401);
+  if (roles.length > 0 && !roles.includes(user.role)) {
+    throw new AuthError(
+      "wrong_role",
+      "Your account can't open this page.",
+      403,
+    );
+  }
+  return user;
 }
 
 /** Agent or park admin of this park (tenant separation). */
@@ -134,19 +162,38 @@ async function deliverCode(
   await sendCode(phone, code, channel);
 }
 
-/** Checks the code, creates the user if new, sets the network-wide session cookie. */
+/**
+ * Checks the code, creates the user if new (a sender tied to signupParkId,
+ * AUTH-3), and sets the network-wide session cookie. Call from a Route
+ * Handler or Server Action (cookies can only be set there). Throws
+ * AuthError: the checkSignInCode errors, or account_deactivated.
+ */
 export async function verifyOtp(
   phone: string,
   code: string,
   signupParkId?: string,
 ): Promise<{ user: SessionUser; isNew: boolean }> {
-  void phone;
-  void code;
-  void signupParkId;
-  return stub({ user: toluSession, isNew: false });
+  const { phone: e164 } = await checkSignInCode(phone, code);
+  const result = await signInUser(e164, signupParkId);
+  const token = await createSessionToken(result.user.id, sessionSecret());
+  (await cookies()).set(SESSION_COOKIE, token, cookieOptions());
+  return result;
 }
 
-export async function signOut(): Promise<void> {}
+/** Clears the session cookie on the root domain (every subdomain). */
+export async function signOut(): Promise<void> {
+  // Same domain and path as when it was set, or the browser keeps it.
+  (await cookies()).set(SESSION_COOKIE, "", { ...cookieOptions(), maxAge: 0 });
+}
+
+function sessionSecret(): string {
+  return requireEnv("AUTH_JWT_SECRET");
+}
+
+function cookieOptions() {
+  const env = serverEnv();
+  return sessionCookieOptions(env.ROOT_DOMAIN, env.NODE_ENV);
+}
 
 /** Signed recipient tracking link token (AUTH-5). */
 export async function signRecipientLink(

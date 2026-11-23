@@ -1,7 +1,5 @@
-import { z } from "zod";
 import { AuthOtp } from "@/contracts/api";
-import type { ApiError } from "@/contracts/primitives";
-import { AuthError, sendOtp } from "@/server/auth";
+import { AuthError, invalidInputResponse, sendOtp } from "@/server/auth";
 
 /**
  * POST /api/auth/otp — sends a 6-digit sign-in code (AUTH-1).
@@ -13,7 +11,12 @@ import { AuthError, sendOtp } from "@/server/auth";
  */
 export async function POST(request: Request): Promise<Response> {
   const parsed = AuthOtp.body.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return invalidInput(parsed.error);
+  if (!parsed.success) {
+    return invalidInputResponse(
+      parsed.error,
+      "Check the phone number and try again.",
+    );
+  }
 
   try {
     const result = await sendOtp(parsed.data.phone, parsed.data.channel);
@@ -24,18 +27,4 @@ export async function POST(request: Request): Promise<Response> {
     if (error instanceof AuthError) return error.toResponse();
     throw error;
   }
-}
-
-function invalidInput(error: z.ZodError): Response {
-  const fields: Record<string, string> = {};
-  for (const issue of error.issues)
-    fields[issue.path.join(".") || "body"] ??= issue.message;
-  const body: ApiError = {
-    error: {
-      code: "invalid_input",
-      message: "Check the phone number and try again.",
-      fields,
-    },
-  };
-  return Response.json(body, { status: 400 });
 }
