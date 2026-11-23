@@ -28,6 +28,15 @@ export const prismaOtpStore: OtpStore = {
     return count === 1;
   },
 
+  async issuedSince(phone, since) {
+    const rows = await db.otpCode.findMany({
+      where: { phone, createdAt: { gt: since } },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    });
+    return rows.map((r) => r.createdAt);
+  },
+
   async consume(id, now) {
     const { count } = await db.otpCode.updateMany({
       where: { id, consumedAt: null },

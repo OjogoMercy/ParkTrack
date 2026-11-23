@@ -2,7 +2,7 @@
  * Owned by Scope 02 (docs/scopes/02-parks-identity.md). Exported names and
  * types are FINAL; callers never change. Everything here is real:
  * sign-in codes (sl3), session (sl4), staff sign-in (sl5), roles and
- * tenancy (sl6), recipient links (sl7).
+ * tenancy (sl6), recipient links (sl7), rate limits (sl8).
  */
 import "server-only";
 import { cookies } from "next/headers";
@@ -31,6 +31,12 @@ import { trackingLinkId } from "@/lib/ids";
 export const STUB = false;
 
 export { AuthError, invalidInputResponse } from "./errors";
+export {
+  clientIp,
+  enforceRateLimit,
+  RATE_LIMITS,
+  type RateLimitRule,
+} from "./rate-limit";
 
 /**
  * Current signed-in user from the session cookie, or null. Checks the

@@ -48,6 +48,11 @@ function memoryStore(): OtpStore & { rows: OtpRow[] } {
       r.consumedAt = now;
       return true;
     },
+    async issuedSince(phone, since) {
+      return rows
+        .filter((r) => r.phone === phone && r.createdAt > since)
+        .map((r) => r.createdAt);
+    },
   };
 }
 let currentNow = T0;
@@ -106,6 +111,21 @@ describe("issueOtp", () => {
       details: { retryInSeconds: 20 },
     });
     await expect(send(store, 30)).resolves.toBeDefined();
+  });
+
+  it("allows 5 codes per phone per hour; the 6th gets 429", async () => {
+    const store = memoryStore();
+    for (const s of [0, 31, 62, 93, 124]) await send(store, s);
+    const err = await send(store, 155).catch((e: AuthError) => e);
+    expect(err).toMatchObject({
+      code: "otp_rate_limited",
+      status: 429,
+      details: { retryInSeconds: 3600 - 155 },
+    });
+    // Switching channel doesn't get around it.
+    expect(await codeOf(send(store, 156, "SMS"))).toBe("otp_rate_limited");
+    // An hour after the first code, one more is allowed.
+    await expect(send(store, 3601)).resolves.toBeDefined();
   });
 
   it("allows switching to SMS straight away", async () => {
