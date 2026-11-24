@@ -7,9 +7,6 @@ import type { Actor, Transition } from "@/contracts/states";
  * Pure data and functions, so every rule is unit-tested without a database.
  */
 
-/** Hours a sender has to drop the parcel off after paying (S06 copy). */
-export const DROPOFF_WINDOW_HOURS = 48;
-
 /** The parcel_events type written for a move, unless the caller names one. */
 export function eventTypeFor(
   from: ParcelStatus,
