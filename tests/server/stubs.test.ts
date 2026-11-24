@@ -84,14 +84,12 @@ describe("service stubs", () => {
     // src/server/uploads/*.test.ts.
     expect(uploads.STUB).toBe(false);
 
-    valid(
-      A.StartPayment.response,
-      await payments.startPayment("p", "SHIPPING", {
-        kind: "user",
-        userId: "u",
-      }),
+    // payments.startPayment / requery / applyVerifiedPayment are real since
+    // Scope 04 sl2 (need a database and Interswitch); see
+    // src/server/payments/*.test.ts. handleWebhook / refund stay stubs.
+    expect((await payments.handleWebhook("{}", new Headers())).processed).toBe(
+      true,
     );
-    valid(D.PaymentStatusView, await payments.requery("ISW-PT-8F3KQ2"));
     valid(D.LedgerView, await ledger.ledger({ account: "PARK" }));
     valid(D.EarningsView, await ledger.driverEarnings("d", "week"));
 
