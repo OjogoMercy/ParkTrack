@@ -13,7 +13,9 @@ export type ParcelErrorCode =
   | "code_resend_too_soon"
   | "code_missing"
   | "code_used"
-  | "code_expired";
+  | "code_expired"
+  | "invalid_upload"
+  | "uploads_unavailable";
 
 /**
  * A refused parcel operation with a stable `code`, an HTTP status and a
