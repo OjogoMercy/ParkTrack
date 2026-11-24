@@ -156,7 +156,7 @@ export function renderMessage(
 
 /** Sign-in and handshake codes (sendCode). No parcel, no link. */
 export function renderCodeMessage(code: string): string {
-  return `${code} is your ParkTrack code. It expires in 5 minutes. Never share it with anyone, including park staff.`;
+  return `${code} is your ParkTrack code. Use it within a few minutes. Never share it with anyone, including park staff.`;
 }
 
 /** Template ids that exist, for tests and the log. */

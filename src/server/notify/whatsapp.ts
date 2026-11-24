@@ -14,8 +14,9 @@ import type { ChannelAdapter, OutboundExtra } from "./channels";
  *     Meta rejects templates that start or end with a variable, hence the
  *     fixed words around it.
  *   parktrack_code    AUTHENTICATION, English, copy-code button
- *     "{{1}} is your verification code." + security note + 10-minute
- *     expiry. Meta only allows one-time codes in AUTHENTICATION templates,
+ *     "{{1}} is your verification code." + security note, and no expiry
+ *     line (sign-in codes last 5 minutes, counter codes 10).
+ *     Meta only allows one-time codes in AUTHENTICATION templates,
  *     which can't hold links or other text, so sign-in and collection
  *     codes use this one.
  *
@@ -44,7 +45,7 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     name: WHATSAPP_TEMPLATES.code.name,
     category: "AUTHENTICATION",
     language: WHATSAPP_TEMPLATES.code.language,
-    body: "{{1}} is your verification code. For your security, do not share this code. This code expires in 10 minutes.",
+    body: "{{1}} is your verification code. For your security, do not share this code.",
     button: "Copy code (OTP, copy_code)",
   },
 ] as const;

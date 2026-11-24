@@ -97,11 +97,13 @@ export { canSeeParcel, type ParcelTenancy } from "./tenancy";
 /**
  * Sends a 6-digit sign-in code (AUTH-1) through @/server/notify. Takes the
  * phone as typed ("0803 555 4471" is fine). Real since Scope 02 sl3: codes
- * are stored hashed in otp_codes; see ./otp.ts for the rules. With
- * NOTIFY_MODE=console (and never in production) the code is also printed to
- * the server log so sign-in works before WhatsApp/SMS are connected.
+ * are stored hashed in otp_codes; see ./otp.ts for the rules. Sent by
+ * @/server/notify sendCode (Scope 03): WhatsApp code template with SMS
+ * fallback when NOTIFY_MODE=live; printed to the server log in console mode
+ * (blanked in production). `channel` in the result is the one that
+ * delivered it.
  *
- * Throws AuthError: invalid_phone, otp_resend_too_soon.
+ * Throws AuthError: invalid_phone, otp_resend_too_soon, otp_rate_limited.
  */
 export async function sendOtp(
   phone: string,
@@ -159,18 +161,17 @@ function codeSecret(): string {
   return requireEnv("AUTH_JWT_SECRET");
 }
 
+/**
+ * Sends the code through @/server/notify (Scope 03): WhatsApp code template
+ * or SMS with fallback in live mode, the server log in console mode (codes
+ * blanked in production). Returns the channel that delivered it.
+ */
 async function deliverCode(
   phone: string,
   code: string,
   channel: OtpChannel,
-): Promise<void> {
-  const env = serverEnv();
-  if (env.NOTIFY_MODE === "console" && env.NODE_ENV !== "production") {
-    console.info(
-      `[otp] sign-in code for ${phone}: ${code} (${channel}, valid 5 min)`,
-    );
-  }
-  await sendCode(phone, code, channel);
+): Promise<OtpChannel> {
+  return (await sendCode(phone, code, channel)).channel;
 }
 
 /**
