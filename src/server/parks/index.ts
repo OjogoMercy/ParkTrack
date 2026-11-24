@@ -162,6 +162,22 @@ export async function listLiveParks(): Promise<ParkRef[]> {
   return parks.map(toRef);
 }
 
+/**
+ * A park by slug whatever its status, for the "park not found" page to tell
+ * "no such park" apart from "this park isn't taking parcels right now"
+ * (ONBOARDING or SUSPENDED). Null when no park has that slug. Request-time
+ * and rare, so not cached.
+ */
+export async function parkStatusBySlug(slug: string): Promise<{
+  name: string;
+  status: "LIVE" | "ONBOARDING" | "SUSPENDED";
+} | null> {
+  return db.park.findUnique({
+    where: { slug },
+    select: { name: true, status: true },
+  });
+}
+
 /** Park whose counter poster QR carries this token (PARK-4). */
 export async function getParkByCounterToken(
   token: string,

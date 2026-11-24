@@ -1,3 +1,4 @@
+import { unstable_rethrow } from "next/navigation";
 import { db } from "@/lib/db";
 import { canSeeParcel, getSession, verifyRecipientLink } from "@/server/auth";
 import { signedViewUrl } from "@/server/uploads";
@@ -24,7 +25,15 @@ export async function GET(
   const target = parseViewPath((await params).path);
   if (!target) return notFound();
 
-  if (!(await mayView(request, target.parcelId))) return notFound();
+  // A failed access check (e.g. database down) never shows the photo.
+  const allowed = await mayView(request, target.parcelId).catch(
+    (e: unknown) => {
+      unstable_rethrow(e);
+      console.error("[uploads] access check failed", e);
+      return false;
+    },
+  );
+  if (!allowed) return notFound();
 
   const url = await signedViewUrl(target.bucket, target.object);
   if (!url) return notFound();

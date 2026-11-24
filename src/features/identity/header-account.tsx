@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { unstable_rethrow } from "next/navigation";
 import { UserRound } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/display";
@@ -12,7 +13,13 @@ import { getSession } from "@/server/auth";
  * with <HeaderAccountSkeleton /> as the fallback.
  */
 export async function HeaderAccount({ signInHref }: { signInHref: string }) {
-  const user = await getSession();
+  // If the session can't be read (database down), show "Sign in" rather
+  // than breaking the whole park page.
+  const user = await getSession().catch((e: unknown) => {
+    unstable_rethrow(e); // prerender bail-out must reach Next.js
+    console.error("[header] session lookup failed", e);
+    return null;
+  });
   if (!user) {
     return (
       <Link

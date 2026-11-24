@@ -1,10 +1,19 @@
 import { Suspense } from "react";
 import { headers } from "next/headers";
-import { Search } from "lucide-react";
+import { Clock, Search } from "lucide-react";
 import { MobileShell, TopBar } from "@/components/ui/shells";
 import { Tile } from "@/components/ui/surface";
-import { listLiveParks, parkDisplayName } from "@/server/parks";
-import { hostnameOf, parkHostLabel, parkUrl } from "@/server/parks/host";
+import {
+  listLiveParks,
+  parkDisplayName,
+  parkStatusBySlug,
+} from "@/server/parks";
+import {
+  hostnameOf,
+  parkHostLabel,
+  parkUrl,
+  resolveHost,
+} from "@/server/parks/host";
 import { ParkTrackLogo } from "./logo";
 import { ParkSearchList } from "./park-search-list";
 
@@ -27,7 +36,30 @@ export function ParkNotFound() {
   );
 }
 
-function Heading({ host }: { host: string | null }) {
+function Heading({
+  host,
+  pausedPark,
+}: {
+  host: string | null;
+  /** A real park that isn't LIVE (onboarding or suspended). */
+  pausedPark?: string;
+}) {
+  if (pausedPark) {
+    return (
+      <div className="flex flex-col gap-2">
+        <Tile className="size-11 [&_svg]:size-5">
+          <Clock />
+        </Tile>
+        <h1 className="pt-2 text-title">
+          {pausedPark} isn’t taking parcels right now
+        </h1>
+        <p className="text-sub text-fg-2">
+          Bookings on this park’s page are paused. Ask at the park counter, or
+          send from another park below.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-2">
       <Tile className="size-11 [&_svg]:size-5">
@@ -52,11 +84,17 @@ async function ParkNotFoundBody() {
   // Read the request first: the park list is request-time content here, so
   // the build never runs the database query (CI has no DATABASE_URL). Started
   // together, the cached listLiveParks() would run during prerender.
-  const host = hostnameOf((await headers()).get("host") ?? "");
-  const parks = await listLiveParks();
+  const rawHost = (await headers()).get("host") ?? "";
+  const host = hostnameOf(rawHost);
+  const target = resolveHost(rawHost, root);
+  const [parks, park] = await Promise.all([
+    listLiveParks(),
+    target.kind === "park" ? parkStatusBySlug(target.slug) : null,
+  ]);
+  const pausedPark = park && park.status !== "LIVE" ? park.name : undefined;
   return (
     <>
-      <Heading host={host || null} />
+      <Heading host={host || null} pausedPark={pausedPark} />
       <ParkSearchList
         parks={parks.map((p) => ({
           slug: p.slug,

@@ -33,6 +33,7 @@ export function SignInForm({
   next,
   staff = false,
   footnote,
+  banner,
 }: {
   title: React.ReactNode;
   intro: React.ReactNode;
@@ -41,6 +42,8 @@ export function SignInForm({
   /** Console sign-in: send staff to their role's home when there's no `next`. */
   staff?: boolean;
   footnote: React.ReactNode;
+  /** Shown under the intro, e.g. who is already signed in. */
+  banner?: React.ReactNode;
 }) {
   const [step, setStep] = useState<"phone" | "code">("phone");
   const [phone, setPhone] = useState("");
@@ -175,6 +178,7 @@ export function SignInForm({
             {title}
           </h1>
           <p className="text-[15px] leading-relaxed text-fg-2">{intro}</p>
+          {banner}
         </div>
         <Field label="Phone number" error={phoneError}>
           {(ids) => (

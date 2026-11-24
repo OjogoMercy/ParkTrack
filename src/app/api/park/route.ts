@@ -1,5 +1,6 @@
 import { GetPark } from "@/contracts/api";
 import type { ApiError } from "@/contracts/primitives";
+import { errorResponse } from "@/server/auth";
 import { getParkPublic } from "@/server/parks";
 import { resolveHost } from "@/server/parks/host";
 
@@ -12,21 +13,29 @@ import { resolveHost } from "@/server/parks/host";
  * "Open now" is per request, so the response is never cached by clients.
  */
 export async function GET(request: Request): Promise<Response> {
-  const host = request.headers.get("host") ?? "";
-  const target = resolveHost(host, process.env.ROOT_DOMAIN || "localhost:3000");
-  const park = target.kind === "park" ? await getParkPublic(target.slug) : null;
+  try {
+    const host = request.headers.get("host") ?? "";
+    const target = resolveHost(
+      host,
+      process.env.ROOT_DOMAIN || "localhost:3000",
+    );
+    const park =
+      target.kind === "park" ? await getParkPublic(target.slug) : null;
 
-  if (!park) {
-    const body: ApiError = {
-      error: {
-        code: "park_not_found",
-        message: "There's no ParkTrack park at this address.",
-      },
-    };
-    return Response.json(body, { status: 404 });
+    if (!park) {
+      const body: ApiError = {
+        error: {
+          code: "park_not_found",
+          message: "There's no ParkTrack park at this address.",
+        },
+      };
+      return Response.json(body, { status: 404 });
+    }
+
+    return Response.json(GetPark.response.parse(park), {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch (error) {
+    return errorResponse(error);
   }
-
-  return Response.json(GetPark.response.parse(park), {
-    headers: { "Cache-Control": "no-store" },
-  });
 }
