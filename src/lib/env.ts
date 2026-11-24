@@ -32,6 +32,9 @@ const ServerEnv = z.object({
   AUTH_JWT_SECRET: secret.optional(),
   LINK_SIGNING_SECRET: secret.optional(),
 
+  /** sandbox (default) or live; picks the Interswitch endpoints. */
+  ISW_ENVIRONMENT: z.enum(["sandbox", "live"]).default("sandbox"),
+  /** API base for the status check; defaults per ISW_ENVIRONMENT. */
   ISW_BASE_URL: z.url().optional(),
   ISW_MERCHANT_CODE: optional,
   ISW_PAY_ITEM_ID: optional,
