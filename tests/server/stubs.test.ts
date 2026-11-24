@@ -78,7 +78,8 @@ describe("service stubs", () => {
     // / quote (sl2) are real and need a database; see
     // src/server/parcels/*.test.ts. Collection codes too (sl3).
 
-    expect((await notify.notify("handshake_complete", "p")).sent).toBe(1);
+    // notify is real since Scope 03 sl5; see src/server/notify/*.test.ts.
+    expect(notify.STUB).toBe(false);
     valid(
       A.CreateUpload.response,
       await uploads.createSignedUpload({
