@@ -184,3 +184,55 @@ describe("links", () => {
     );
   });
 });
+
+describe("Pidgin (PCM)", () => {
+  const cases = NOTIFICATION_EVENTS.flatMap((event) =>
+    NOTIFICATION_AUDIENCE[event].map((audience) => [event, audience] as const),
+  );
+
+  it("has a Pidgin version of every message", () => {
+    expect(templateIds("PCM").sort()).toEqual(templateIds("EN").sort());
+  });
+
+  for (const [event, audience] of cases) {
+    it(`${event} → ${audience}: same code and link, different words`, () => {
+      const en = renderMessage(event, audience, context(), "EN")!;
+      const pcm = renderMessage(event, audience, context(), "PCM")!;
+      expect(pcm).not.toBe(en);
+      expect(pcm).toContain("PT-7K3Q");
+      const url = en.match(/https?:\/\/\S+/)?.[0];
+      if (url) expect(pcm).toContain(url);
+      expect(pcm.length).toBeLessThan(320);
+    });
+  }
+
+  it("keeps the money, bay and code facts", () => {
+    const text = renderMessage(
+      "arrived_at_park",
+      "recipient",
+      context(),
+      "PCM",
+    )!;
+    expect(text).toContain("bay C4");
+    expect(text).toContain("₦300 per day");
+    expect(text).toContain("You go pay ₦25,000 when you collect");
+    expect(
+      renderMessage("collection_started", "recipient", context(), "PCM"),
+    ).toMatch(/code for PT-7K3Q na 482913/);
+  });
+
+  it("English is the default", () => {
+    expect(renderMessage("collected", "recipient", context())).toBe(
+      renderMessage("collected", "recipient", context(), "EN"),
+    );
+  });
+
+  it("sign-in code in Pidgin", () => {
+    expect(renderCodeMessage("123456", "PCM")).toMatch(
+      /^123456 na your ParkTrack code/,
+    );
+    expect(renderCodeMessage("123456")).toMatch(
+      /^123456 is your ParkTrack code/,
+    );
+  });
+});

@@ -5,12 +5,14 @@ import { db } from "@/lib/db";
 import { signRecipientLink } from "@/server/auth";
 import type { LiveChannel } from "./channels";
 import { messageLinks } from "./links";
-import type { MessageContext } from "./templates";
+import type { MessageContext, MessageLanguage } from "./templates";
 
 export type Person = {
   audience: Audience;
   phone: string;
   preferred: LiveChannel;
+  /** Profile language; English for recipients without an account. */
+  language: MessageLanguage;
 };
 
 /** Before the drop-off handshake the recipient hears nothing (HS-7). */
@@ -18,6 +20,9 @@ const BEFORE_HANDSHAKE: readonly ParcelStatus[] = ["DRAFT", "AWAITING_DROPOFF"];
 
 const channelOf = (c: string | null | undefined): LiveChannel =>
   c === "SMS" ? "SMS" : "WHATSAPP";
+
+const languageOf = (l: string | null | undefined): MessageLanguage =>
+  l === "PCM" ? "PCM" : "EN";
 
 /**
  * Everything the templates need for one parcel, plus who should hear the
@@ -33,7 +38,14 @@ export async function loadMessageContext(
   const parcel = await db.parcel.findUnique({
     where: { id: parcelId },
     include: {
-      sender: { select: { name: true, phone: true, notifyChannel: true } },
+      sender: {
+        select: {
+          name: true,
+          phone: true,
+          notifyChannel: true,
+          language: true,
+        },
+      },
       originPark: {
         select: { id: true, name: true, city: true, slug: true },
       },
@@ -56,7 +68,12 @@ export async function loadMessageContext(
             select: {
               vehiclePlate: true,
               driver: {
-                select: { name: true, phone: true, notifyChannel: true },
+                select: {
+                  name: true,
+                  phone: true,
+                  notifyChannel: true,
+                  language: true,
+                },
               },
             },
           },
@@ -83,7 +100,7 @@ export async function loadMessageContext(
     wantsRecipient
       ? db.user.findUnique({
           where: { phone: parcel.recipientPhone },
-          select: { notifyChannel: true },
+          select: { notifyChannel: true, language: true },
         })
       : null,
     staffFor(audiences, parcel.originParkId, parcel.destinationParkId),
@@ -134,6 +151,7 @@ export async function loadMessageContext(
             audience,
             phone: parcel.sender.phone,
             preferred: channelOf(parcel.sender.notifyChannel),
+            language: languageOf(parcel.sender.language),
           });
         break;
       case "recipient":
@@ -142,6 +160,7 @@ export async function loadMessageContext(
             audience,
             phone: parcel.recipientPhone,
             preferred: channelOf(recipientUser?.notifyChannel),
+            language: languageOf(recipientUser?.language),
           });
         break;
       case "driver":
@@ -150,6 +169,7 @@ export async function loadMessageContext(
             audience,
             phone: trip.driver.phone,
             preferred: channelOf(trip.driver.notifyChannel),
+            language: languageOf(trip.driver.language),
           });
         break;
       default:
@@ -158,6 +178,7 @@ export async function loadMessageContext(
             audience,
             phone: s.phone,
             preferred: channelOf(s.notifyChannel),
+            language: languageOf(s.language),
           });
     }
   }
@@ -170,15 +191,23 @@ async function staffFor(
   originParkId: string,
   destinationParkId: string,
 ): Promise<
-  Partial<Record<Audience, { phone: string; notifyChannel: string }[]>>
+  Partial<
+    Record<
+      Audience,
+      { phone: string; notifyChannel: string; language: string }[]
+    >
+  >
 > {
   const out: Partial<
-    Record<Audience, { phone: string; notifyChannel: string }[]>
+    Record<
+      Audience,
+      { phone: string; notifyChannel: string; language: string }[]
+    >
   > = {};
   const find = (role: "AGENT" | "PARK_ADMIN", parkIds: string[]) =>
     db.user.findMany({
       where: { role, status: "ACTIVE", parkId: { in: parkIds } },
-      select: { phone: true, notifyChannel: true },
+      select: { phone: true, notifyChannel: true, language: true },
     });
   if (audiences.includes("origin_agent"))
     out.origin_agent = await find("AGENT", [originParkId]);
