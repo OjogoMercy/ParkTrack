@@ -5,21 +5,30 @@
  *                        logged as channel CONSOLE. In production any
  *                        6-digit code is blanked out of the printed text.
  *   NOTIFY_MODE=live     the person's preferred channel first (WhatsApp or
- *                        SMS), then the other one if it fails. The adapters
- *                        arrive in sl6 (Termii SMS) and sl7 (WhatsApp Cloud
- *                        API); until then they report "not connected".
+ *                        SMS), then the other one if it fails: WhatsApp
+ *                        Cloud API (./whatsapp.ts) and Termii SMS
+ *                        (./termii.ts). A WhatsApp template that isn't
+ *                        approved, a number not on WhatsApp, a bad token or
+ *                        a timeout all fall back to SMS.
  *
  * Each attempt is reported so ./index.ts can log it in `notifications`.
  */
 
 import { serverEnv } from "@/lib/env";
 import { termiiFromEnv } from "./termii";
+import { whatsAppFromEnv } from "./whatsapp";
 
 export type LiveChannel = "WHATSAPP" | "SMS";
 
+/** Extra facts a channel may need beyond the text. */
+export type OutboundExtra = {
+  /** One-time code in the message: WhatsApp must use its code template. */
+  code?: string;
+};
+
 export interface ChannelAdapter {
   /** Resolves when the provider accepted the message; throws otherwise. */
-  send(phone: string, text: string): Promise<void>;
+  send(phone: string, text: string, extra?: OutboundExtra): Promise<void>;
 }
 
 export type Attempt = {
@@ -28,27 +37,28 @@ export type Attempt = {
   error?: string;
 };
 
-const notConnected = (name: string): ChannelAdapter => ({
-  async send() {
-    throw new Error(`${name} isn't connected yet`);
-  },
-});
-
-/** Termii, built from the environment on each send (keys can change). */
-const termiiSms: ChannelAdapter = {
-  async send(phone, text) {
-    const adapter = termiiFromEnv(serverEnv());
-    if ("missing" in adapter) {
-      throw new Error(`SMS isn't set up: add ${adapter.missing.join(", ")}`);
-    }
-    await adapter.send(phone, text);
-  },
-};
-
-/** Live adapters by channel. sl7 replaces WhatsApp. */
+/** Adapters are built from the environment on each send (keys can change). */
 export const liveAdapters: Record<LiveChannel, ChannelAdapter> = {
-  WHATSAPP: notConnected("WhatsApp"),
-  SMS: termiiSms,
+  WHATSAPP: {
+    async send(phone, text, extra) {
+      const adapter = whatsAppFromEnv(serverEnv());
+      if ("missing" in adapter) {
+        throw new Error(
+          `WhatsApp isn't set up: add ${adapter.missing.join(", ")}`,
+        );
+      }
+      await adapter.send(phone, text, extra);
+    },
+  },
+  SMS: {
+    async send(phone, text, extra) {
+      const adapter = termiiFromEnv(serverEnv());
+      if ("missing" in adapter) {
+        throw new Error(`SMS isn't set up: add ${adapter.missing.join(", ")}`);
+      }
+      await adapter.send(phone, text, extra);
+    },
+  },
 };
 
 function printable(text: string, production: boolean): string {
@@ -62,10 +72,12 @@ export async function deliver(
   {
     mode,
     production,
+    extra = {},
     adapters = liveAdapters,
   }: {
     mode: "console" | "live";
     production: boolean;
+    extra?: OutboundExtra;
     adapters?: Record<LiveChannel, ChannelAdapter>;
   },
 ): Promise<Attempt[]> {
@@ -80,7 +92,7 @@ export async function deliver(
   const attempts: Attempt[] = [];
   for (const channel of order) {
     try {
-      await adapters[channel].send(phone, text);
+      await adapters[channel].send(phone, text, extra);
       attempts.push({ channel, ok: true });
       break;
     } catch (e) {

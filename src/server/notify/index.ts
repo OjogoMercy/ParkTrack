@@ -1,8 +1,8 @@
 /**
  * Owned by Scope 03 (docs/scopes/03-parcel-engine.md). Exported names and
  * types are FINAL; callers never change. Real since Scope 03 sl5: PRD §11
- * templates, the `notifications` log and the console channel. The live
- * SMS (sl6) and WhatsApp (sl7) adapters plug into ./channels.ts.
+ * templates, the `notifications` log and the console channel; live sends
+ * through WhatsApp Cloud API (sl7) with Termii SMS (sl6) as fallback.
  */
 import "server-only";
 import type { NotificationEvent } from "@/contracts/notifications";
@@ -44,6 +44,11 @@ export async function notify(
       const attempts = await deliver(person.phone, text, person.preferred, {
         mode: env.NOTIFY_MODE,
         production: env.NODE_ENV === "production",
+        // Code messages use the WhatsApp code template (Meta policy).
+        extra:
+          event === "collection_started" && typeof extra.code === "string"
+            ? { code: extra.code }
+            : {},
       });
       await logAttempts(
         attempts,
@@ -74,6 +79,7 @@ export async function sendCode(
     const attempts = await deliver(phone, renderCodeMessage(code), channel, {
       mode: env.NOTIFY_MODE,
       production: env.NODE_ENV === "production",
+      extra: { code },
     });
     await logAttempts(attempts, phone, "otp", null);
     const used = attempts.find((a) => a.ok)?.channel;
