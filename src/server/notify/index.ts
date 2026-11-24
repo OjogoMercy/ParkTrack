@@ -39,7 +39,12 @@ export async function notify(
     if (!loaded) return { sent };
 
     for (const person of loaded.people) {
-      const text = renderMessage(event, person.audience, loaded.context);
+      const text = renderMessage(
+        event,
+        person.audience,
+        loaded.context,
+        person.language,
+      );
       if (!text) continue;
       const attempts = await deliver(person.phone, text, person.preferred, {
         mode: env.NOTIFY_MODE,
@@ -76,7 +81,16 @@ export async function sendCode(
 ): Promise<{ channel: "WHATSAPP" | "SMS" }> {
   try {
     const env = serverEnv();
-    const attempts = await deliver(phone, renderCodeMessage(code), channel, {
+    // Pidgin if this phone belongs to someone who chose it.
+    const user = await db.user.findUnique({
+      where: { phone },
+      select: { language: true },
+    });
+    const text = renderCodeMessage(
+      code,
+      user?.language === "PCM" ? "PCM" : "EN",
+    );
+    const attempts = await deliver(phone, text, channel, {
       mode: env.NOTIFY_MODE,
       production: env.NODE_ENV === "production",
       extra: { code },
