@@ -42,6 +42,10 @@ const ServerEnv = z.object({
   NOTIFY_MODE: z.enum(["console", "live"]).default("console"),
   TERMII_API_KEY: optional,
   TERMII_SENDER_ID: optional,
+  /** Account-specific; shown on the Termii dashboard. */
+  TERMII_BASE_URL: z.url().optional(),
+  /** "dnd" for transactional messages (reaches DND numbers); needs activating with Termii. */
+  TERMII_CHANNEL: z.enum(["dnd", "generic"]).default("dnd"),
   WA_PHONE_NUMBER_ID: optional,
   WA_TOKEN: optional,
 

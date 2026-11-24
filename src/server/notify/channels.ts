@@ -12,6 +12,9 @@
  * Each attempt is reported so ./index.ts can log it in `notifications`.
  */
 
+import { serverEnv } from "@/lib/env";
+import { termiiFromEnv } from "./termii";
+
 export type LiveChannel = "WHATSAPP" | "SMS";
 
 export interface ChannelAdapter {
@@ -31,10 +34,21 @@ const notConnected = (name: string): ChannelAdapter => ({
   },
 });
 
-/** Live adapters by channel. sl6/sl7 replace these. */
+/** Termii, built from the environment on each send (keys can change). */
+const termiiSms: ChannelAdapter = {
+  async send(phone, text) {
+    const adapter = termiiFromEnv(serverEnv());
+    if ("missing" in adapter) {
+      throw new Error(`SMS isn't set up: add ${adapter.missing.join(", ")}`);
+    }
+    await adapter.send(phone, text);
+  },
+};
+
+/** Live adapters by channel. sl7 replaces WhatsApp. */
 export const liveAdapters: Record<LiveChannel, ChannelAdapter> = {
   WHATSAPP: notConnected("WhatsApp"),
-  SMS: notConnected("SMS"),
+  SMS: termiiSms,
 };
 
 function printable(text: string, production: boolean): string {
