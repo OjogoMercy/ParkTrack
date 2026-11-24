@@ -131,13 +131,19 @@ export async function startPayment(
     if (open && open.amountKobo === payable.amountKobo) {
       return { payment: open, parcel };
     }
-    // Close older open checkouts for this parcel and purpose.
+    // Close older open checkouts for this parcel and purpose. Their
+    // Interswitch page stays payable for 30 minutes, so they keep being
+    // checked; a late payment on one is caught and flagged for a refund.
     await tx.payment.updateMany({
       where: { parcelId, purpose, status: "PENDING" },
       data: {
         status: "FAILED",
-        nextRequeryAt: null,
-        rawResponse: { reason: "Replaced by a newer checkout", final: true },
+        nextRequeryAt: new Date(now.getTime() + minutes(RECHECK_MINUTES)),
+        rawResponse: {
+          reason: REPLACED_REASON,
+          replaced: true,
+          final: false,
+        },
       },
     });
     const payment = await tx.payment.create({
@@ -226,7 +232,9 @@ export async function requery(txnRef: string): Promise<PaymentStatusView> {
       amountKobo: payment.amountKobo,
       startedAt: payment.createdAt,
     });
-    await recordVerdict(payment.id, verdict, answer);
+    const replaced =
+      (payment.rawResponse as { replaced?: boolean } | null)?.replaced === true;
+    await recordVerdict(payment.id, verdict, answer, { replaced });
   }
   const latest = await db.payment.findUniqueOrThrow({ where: { txnRef } });
   if (latest.status === "VERIFIED") await applyVerifiedPayment(latest.id);
@@ -237,9 +245,20 @@ async function recordVerdict(
   paymentId: string,
   verdict: Verdict,
   answer: unknown,
+  { replaced }: { replaced: boolean },
 ): Promise<void> {
   const now = new Date();
-  const raw = { answer, reason: "reason" in verdict ? verdict.reason : null };
+  const raw = {
+    answer,
+    // A replaced checkout keeps its reason (and stays FAILED) unless it
+    // turns out to be paid.
+    reason: replaced
+      ? REPLACED_REASON
+      : "reason" in verdict
+        ? verdict.reason
+        : null,
+    ...(replaced ? { replaced: true } : {}),
+  };
   if (verdict.status === "VERIFIED") {
     // Claim: only a payment that isn't verified yet becomes verified.
     await db.payment.updateMany({
@@ -258,22 +277,49 @@ async function recordVerdict(
   const keepChecking =
     verdict.status === "PENDING" ||
     (verdict.status === "FAILED" && !verdict.final);
+  const review = verdict.status === "FAILED" && verdict.needsReview === true;
+  if (review) {
+    // Money may have moved, but not what we charged (or not our reference):
+    // never applied; staff must check it (P07 payments monitor, Scope 09).
+    console.warn(`[payments] NEEDS REVIEW ${paymentId}: ${verdict.reason}`);
+  }
   await db.payment.updateMany({
     where: { id: paymentId, status: { not: "VERIFIED" } },
     data: {
-      status: verdict.status,
+      // Never reopen a replaced checkout as pending.
+      status: replaced ? "FAILED" : verdict.status,
       responseCode: verdict.responseCode,
       nextRequeryAt: keepChecking
         ? new Date(now.getTime() + minutes(RECHECK_MINUTES))
         : null,
       rawResponse: {
         ...raw,
-        final: verdict.status === "FAILED" ? verdict.final : false,
+        // The payer sees a plain message; the detail stays on the server.
+        ...(review
+          ? {
+              reason: REVIEW_MESSAGE,
+              detail: verdict.reason,
+              needsReview: true,
+            }
+          : {}),
+        // A replaced checkout settles once Interswitch's 30 minutes are up.
+        final:
+          verdict.status === "FAILED"
+            ? verdict.final
+            : replaced
+              ? !keepChecking
+              : false,
       } as Prisma.InputJsonValue,
       requeryCount: { increment: 1 },
     },
   });
 }
+
+const REPLACED_REASON = "Replaced by a newer checkout";
+
+/** What the payer sees when a payment needs a person to check it. */
+const REVIEW_MESSAGE =
+  "We couldn't confirm this payment. Our team will check it and contact you; don't pay again";
 
 /** What the payer sees for a payment (S05/S06), without asking Interswitch. */
 export async function paymentStatus(
@@ -288,7 +334,11 @@ export async function paymentStatus(
     },
   });
   if (!payment) return null;
-  const raw = (payment.rawResponse ?? {}) as { reason?: string | null };
+  const raw = (payment.rawResponse ?? {}) as {
+    reason?: string | null;
+    needsReview?: boolean;
+    replaced?: boolean;
+  };
   const root = serverEnv().ROOT_DOMAIN;
   const returnTo =
     payment.purpose === "SHIPPING" || payment.purpose === "TOP_UP"
@@ -306,7 +356,13 @@ export async function paymentStatus(
     responseCode: payment.responseCode,
     reason:
       payment.status === "FAILED" && raw.reason
-        ? payment.responseCode && /^[0-9A-Z]{2,3}$/.test(payment.responseCode)
+        ? // Interswitch's reason with its code, e.g. "Insufficient Funds
+          // (51)" (S06). Not "(00)" on a payment held for review.
+          payment.responseCode &&
+          payment.responseCode !== "00" &&
+          !raw.needsReview &&
+          !raw.replaced &&
+          /^[0-9A-Z]{2,3}$/.test(payment.responseCode)
           ? `${raw.reason} (${payment.responseCode})`
           : raw.reason
         : null,
@@ -319,12 +375,14 @@ export async function paymentStatus(
  * Applies a verified payment exactly once (PAY-4). Each purpose checks its
  * own effect, so calling it again (callback, webhook, job) changes nothing:
  *   SHIPPING  DRAFT → AWAITING_DROPOFF (sets the drop-off deadline and sends
- *             booking_paid). If the booking was cancelled meanwhile, the
- *             payment is flagged for a refund instead.
+ *             booking_paid).
  *   TOP_UP    clears the size top-up.
  *   POD       marks pay-on-delivery paid; roadside parcels get their
  *             handover code (R02).
  *   STORAGE   storage paid up to when the checkout started.
+ * Money that arrives but can't be applied (the booking was cancelled or
+ * closed, another checkout already paid it, or what's owed changed) is
+ * never kept silently: the payment is flagged for a refund (sl9).
  * Ledger entries are added in sl7.
  */
 export async function applyVerifiedPayment(
@@ -339,21 +397,43 @@ export async function applyVerifiedPayment(
           status: true,
           deliveryMode: true,
           topUpRequiredKobo: true,
+          totalKobo: true,
         },
       },
     },
   });
   if (!payment || payment.status !== "VERIFIED") return { applied: false };
-  const parcel = payment.parcel;
-  const purpose = payment.purpose as PayablePurpose;
+  const applied = await applyOnce(payment);
+  if (!applied) {
+    const refundReason = await notAppliedReason(payment.id);
+    if (refundReason) await flagRefund(payment.id, refundReason);
+  }
+  return { applied };
+}
 
-  switch (purpose) {
+type VerifiedPayment = Prisma.PaymentGetPayload<{
+  include: {
+    parcel: {
+      select: {
+        id: true;
+        status: true;
+        deliveryMode: true;
+        topUpRequiredKobo: true;
+        totalKobo: true;
+      };
+    };
+  };
+}>;
+
+async function applyOnce(payment: VerifiedPayment): Promise<boolean> {
+  const parcel = payment.parcel;
+  switch (payment.purpose as PayablePurpose) {
     case "SHIPPING": {
-      if (parcel.status !== "DRAFT") {
-        if (parcel.status === "CANCELLED") await flagRefund(payment.id);
-        return { applied: false };
-      }
+      if (parcel.status !== "DRAFT") return false;
+      // A checkout started before the total changed doesn't pay for it.
+      if (payment.amountKobo !== parcel.totalKobo) return false;
       try {
+        // The PAID event carries the payment id: that's the "applied" mark.
         await transition(
           parcel.id,
           "AWAITING_DROPOFF",
@@ -363,34 +443,29 @@ export async function applyVerifiedPayment(
             meta: { txnRef: payment.txnRef, paymentId: payment.id },
           },
         );
-        return { applied: true };
+        return true;
       } catch (e) {
         // Someone else applied it first, or it was cancelled meanwhile.
-        if (e instanceof ParcelError) {
-          const now = await db.parcel.findUnique({
-            where: { id: parcel.id },
-            select: { status: true },
-          });
-          if (now?.status === "CANCELLED") await flagRefund(payment.id);
-          return { applied: false };
-        }
+        if (e instanceof ParcelError) return false;
         throw e;
       }
     }
-    case "TOP_UP": {
-      const { count } = await db.parcel.updateMany({
-        where: { id: parcel.id, topUpRequiredKobo: payment.amountKobo },
-        data: { topUpRequiredKobo: 0 },
-      });
-      return { applied: count === 1 };
-    }
+    case "TOP_UP":
+      return markApplied(payment.id, (tx) =>
+        tx.parcel.updateMany({
+          where: { id: parcel.id, topUpRequiredKobo: payment.amountKobo },
+          data: { topUpRequiredKobo: 0 },
+        }),
+      );
     case "POD": {
-      const { count } = await db.parcel.updateMany({
-        where: { id: parcel.id, podPaidAt: null },
-        data: { podPaidAt: payment.verifiedAt ?? new Date() },
-      });
+      const applied = await markApplied(payment.id, (tx) =>
+        tx.parcel.updateMany({
+          where: { id: parcel.id, podPaidAt: null },
+          data: { podPaidAt: payment.verifiedAt ?? new Date() },
+        }),
+      );
       if (
-        count === 1 &&
+        applied &&
         parcel.deliveryMode === "ROADSIDE" &&
         (parcel.status === "ASSIGNED" || parcel.status === "IN_TRANSIT")
       ) {
@@ -398,25 +473,96 @@ export async function applyVerifiedPayment(
           console.error("[payments] roadside code after POD", e),
         );
       }
-      return { applied: count === 1 };
+      return applied;
     }
-    case "STORAGE": {
-      const { count } = await db.parcel.updateMany({
-        where: {
-          id: parcel.id,
-          OR: [
-            { storagePaidUntil: null },
-            { storagePaidUntil: { lt: payment.createdAt } },
-          ],
-        },
-        data: { storagePaidUntil: payment.createdAt },
-      });
-      return { applied: count === 1 };
-    }
+    case "STORAGE":
+      return markApplied(payment.id, (tx) =>
+        tx.parcel.updateMany({
+          where: {
+            id: parcel.id,
+            OR: [
+              { storagePaidUntil: null },
+              { storagePaidUntil: { lt: payment.createdAt } },
+            ],
+          },
+          data: { storagePaidUntil: payment.createdAt },
+        }),
+      );
   }
 }
 
-async function flagRefund(paymentId: string): Promise<void> {
+/**
+ * Runs the parcel update and marks the payment applied in one transaction,
+ * so a replay (count 0) can tell "already applied by me" from a duplicate.
+ */
+async function markApplied(
+  paymentId: string,
+  update: (tx: Prisma.TransactionClient) => Promise<{ count: number }>,
+): Promise<boolean> {
+  return db.$transaction(async (tx) => {
+    const { count } = await update(tx);
+    if (count !== 1) return false;
+    const p = await tx.payment.findUniqueOrThrow({
+      where: { id: paymentId },
+      select: { rawResponse: true },
+    });
+    await tx.payment.update({
+      where: { id: paymentId },
+      data: {
+        rawResponse: {
+          ...((p.rawResponse ?? {}) as Record<string, unknown>),
+          applied: true,
+        } as Prisma.InputJsonValue,
+      },
+    });
+    return true;
+  });
+}
+
+/**
+ * Why a verified payment that wasn't applied now needs a refund, or null
+ * when it was applied earlier (a replay).
+ */
+async function notAppliedReason(paymentId: string): Promise<string | null> {
+  const payment = await db.payment.findUniqueOrThrow({
+    where: { id: paymentId },
+    include: {
+      parcel: { select: { id: true, status: true, totalKobo: true } },
+    },
+  });
+  if ((payment.rawResponse as { applied?: boolean } | null)?.applied) {
+    return null;
+  }
+  switch (payment.purpose as PayablePurpose) {
+    case "SHIPPING": {
+      const paid = await db.parcelEvent.findFirst({
+        where: { parcelId: payment.parcelId, type: "PAID" },
+        orderBy: { createdAt: "asc" },
+        select: { meta: true },
+      });
+      const paidBy = (paid?.meta as { paymentId?: string } | null)?.paymentId;
+      if (paidBy === payment.id) return null;
+      if (paidBy) return "Booking already paid by another checkout";
+      if (payment.parcel.status === "CANCELLED") {
+        return "Paid after the booking was cancelled";
+      }
+      if (payment.parcel.status === "DRAFT") {
+        return payment.amountKobo !== payment.parcel.totalKobo
+          ? "Booking total changed after this checkout started"
+          : null; // not settled yet
+      }
+      return "Paid after the booking closed";
+    }
+    case "TOP_UP":
+      return "Top-up already paid, or changed after this checkout started";
+    case "POD":
+      return "Pay-on-delivery already paid by another checkout";
+    case "STORAGE":
+      return "Storage already paid by a later checkout";
+  }
+}
+
+async function flagRefund(paymentId: string, reason: string): Promise<void> {
   const payment = await db.payment.findUnique({ where: { id: paymentId } });
   const raw = (payment?.rawResponse ?? {}) as Record<string, unknown>;
   if (raw.needsRefund) return;
@@ -426,11 +572,11 @@ async function flagRefund(paymentId: string): Promise<void> {
       rawResponse: {
         ...raw,
         needsRefund: true,
-        refundReason: "Paid after the booking was cancelled",
+        refundReason: reason,
       } as Prisma.InputJsonValue,
     },
   });
-  console.warn(`[payments] ${payment?.txnRef} needs a refund (sl9)`);
+  console.warn(`[payments] ${payment?.txnRef} needs a refund (sl9): ${reason}`);
 }
 
 /** Refund for expiry, cancellation or refusal (PAY-6). STUB until sl9. */
