@@ -29,7 +29,9 @@ export function ParkSearchList({ parks }: { parks: ParkListItem[] }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <label className="flex h-11 w-full items-center gap-2 rounded-control border border-line-strong bg-panel px-3 shadow-1 focus-within:border-fg focus-within:shadow-focus">
+      <label
+        className={`${parks.length === 0 ? "hidden" : "flex"} h-11 w-full items-center gap-2 rounded-control border border-line-strong bg-panel px-3 shadow-1 focus-within:border-fg focus-within:shadow-focus`}
+      >
         <Search className="size-[17px] text-fg-3" aria-hidden />
         <input
           value={query}
@@ -71,7 +73,9 @@ export function ParkSearchList({ parks }: { parks: ParkListItem[] }) {
         </Card>
       ) : (
         <p className="px-1 text-small text-fg-3">
-          No park matches “{query}” yet.
+          {parks.length === 0
+            ? "No parks are taking parcels yet. Check back soon."
+            : `No park matches “${query}” yet.`}
         </p>
       )}
     </div>

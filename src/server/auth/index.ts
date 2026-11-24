@@ -30,7 +30,7 @@ import { trackingLinkId } from "@/lib/ids";
 
 export const STUB = false;
 
-export { AuthError, invalidInputResponse } from "./errors";
+export { AuthError, errorResponse, invalidInputResponse } from "./errors";
 export {
   clientIp,
   enforceRateLimit,
