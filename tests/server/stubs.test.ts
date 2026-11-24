@@ -80,15 +80,9 @@ describe("service stubs", () => {
 
     // notify is real since Scope 03 sl5; see src/server/notify/*.test.ts.
     expect(notify.STUB).toBe(false);
-    valid(
-      A.CreateUpload.response,
-      await uploads.createSignedUpload({
-        kind: "dropoff",
-        parcelId: "p",
-        contentType: "image/jpeg",
-        sizeBytes: 1000,
-      }),
-    );
+    // uploads is real since Scope 03 sl8 (Supabase Storage); see
+    // src/server/uploads/*.test.ts.
+    expect(uploads.STUB).toBe(false);
 
     valid(
       A.StartPayment.response,
