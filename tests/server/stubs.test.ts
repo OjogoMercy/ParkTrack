@@ -74,32 +74,15 @@ describe("service stubs", () => {
       valid(z.array(D.ParkRef), await parks.listLiveParks());
     }
 
-    valid(D.ParcelSummary, await parcels.createDraft({} as parcels.DraftInput));
-    valid(
-      D.Quote,
-      await parcels.quote({ routeId: "r", size: "M", podKobo: 0 }),
-    );
-    valid(
-      D.ParcelSummary,
-      await parcels.transition("p", "RECEIVED_AT_ORIGIN", { actor: "AGENT" }),
-    );
-    await expect(
-      parcels.transition("p", "SETTLED", { actor: "AGENT" }),
-    ).rejects.toThrow(/not allowed/);
-    expect(
-      (await parcels.verifyCollectionCode("p", "000000", "COUNTER")).ok,
-    ).toBe(false);
+    // parcels.transition / changeDeliveryMode (Scope 03 sl1) and createDraft
+    // / quote (sl2) are real and need a database; see
+    // src/server/parcels/*.test.ts. Collection codes too (sl3).
 
-    expect((await notify.notify("handshake_complete", "p")).sent).toBe(1);
-    valid(
-      A.CreateUpload.response,
-      await uploads.createSignedUpload({
-        kind: "dropoff",
-        parcelId: "p",
-        contentType: "image/jpeg",
-        sizeBytes: 1000,
-      }),
-    );
+    // notify is real since Scope 03 sl5; see src/server/notify/*.test.ts.
+    expect(notify.STUB).toBe(false);
+    // uploads is real since Scope 03 sl8 (Supabase Storage); see
+    // src/server/uploads/*.test.ts.
+    expect(uploads.STUB).toBe(false);
 
     valid(
       A.StartPayment.response,

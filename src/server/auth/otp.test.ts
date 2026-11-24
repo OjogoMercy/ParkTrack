@@ -128,6 +128,19 @@ describe("issueOtp", () => {
     await expect(send(store, 3601)).resolves.toBeDefined();
   });
 
+  it("reports the channel that actually delivered the code", async () => {
+    const store = memoryStore();
+    const result = await issueOtp({
+      phone: PHONE,
+      channel: "WHATSAPP",
+      store,
+      secret: SECRET,
+      deliver: async () => "SMS", // WhatsApp failed, SMS took over
+      now: T0,
+    });
+    expect(result.channel).toBe("SMS");
+  });
+
   it("allows switching to SMS straight away", async () => {
     const store = memoryStore();
     await send(store, 0, "WHATSAPP");

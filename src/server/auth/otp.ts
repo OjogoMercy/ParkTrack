@@ -60,7 +60,12 @@ export type IssueOtpInput = {
   channel: OtpChannel;
   store: OtpStore;
   secret: string;
-  deliver: (phone: string, code: string, channel: OtpChannel) => Promise<void>;
+  /** Sends the code; may return the channel that actually delivered it. */
+  deliver: (
+    phone: string,
+    code: string,
+    channel: OtpChannel,
+  ) => Promise<OtpChannel | void>;
   now?: Date;
 };
 
@@ -115,8 +120,9 @@ export async function issueOtp({
     channel,
     expiresAt: new Date(now.getTime() + OTP_TTL_SECONDS * 1000),
   });
-  await deliver(phone, code, channel);
-  return { channel, resendInSeconds: OTP_RESEND_SECONDS };
+  // The channel that actually delivered it (SMS if WhatsApp fell back).
+  const delivered = await deliver(phone, code, channel);
+  return { channel: delivered ?? channel, resendInSeconds: OTP_RESEND_SECONDS };
 }
 
 export type CheckOtpInput = {
