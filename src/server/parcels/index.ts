@@ -1,9 +1,8 @@
 /**
  * Owned by Scope 03 (docs/scopes/03-parcel-engine.md). Exported names and
- * types are FINAL; callers never change. Being replaced slice by slice:
- * transition / changeDeliveryMode (sl1), createDraft / quote (sl2) and
- * collection codes (sl3) are real; storageDues (sl4) still returns fixture
- * data. STUB stays true until every function here is real.
+ * types are FINAL; callers never change. Everything here is real:
+ * transition / changeDeliveryMode (sl1), createDraft / quote (sl2),
+ * collection codes (sl3), storageDues (sl4).
  */
 import "server-only";
 import { after } from "next/server";
@@ -40,7 +39,6 @@ import {
   codeExpiry,
   issueProblem,
 } from "./codes";
-import { stub } from "@/mocks/stub";
 import {
   buildQuote,
   DRAFT_TTL_HOURS,
@@ -49,15 +47,11 @@ import {
 } from "./pricing";
 import { notify } from "@/server/notify";
 import { ParcelError } from "./errors";
-import {
-  actorProblem,
-  DROPOFF_WINDOW_HOURS,
-  eventTypeFor,
-  notificationFor,
-} from "./lifecycle";
+import { actorProblem, eventTypeFor, notificationFor } from "./lifecycle";
+import { computeStorageDues } from "./storage";
 import { summaryInclude, toParcelSummary } from "./summary";
 
-export const STUB = true;
+export const STUB = false;
 
 export { ParcelError } from "./errors";
 
@@ -308,6 +302,7 @@ export async function transition(
         destinationParkId: true,
         senderId: true,
         tripParcels: { select: { trip: { select: { driverId: true } } } },
+        originPark: { select: { dropoffDeadlineHours: true } },
       },
     });
     if (!parcel) {
@@ -343,7 +338,10 @@ export async function transition(
 
     const { count } = await tx.parcel.updateMany({
       where: { id: parcelId, status: from },
-      data: { status: to, ...sideEffects(from, to, now) },
+      data: {
+        status: to,
+        ...sideEffects(from, to, now, parcel.originPark.dropoffDeadlineHours),
+      },
     });
     if (count !== 1) {
       throw new ParcelError(
@@ -478,17 +476,21 @@ export async function changeDeliveryMode(
   return summary;
 }
 
-/** Field changes that go with a move, in the same update as the status. */
+/**
+ * Field changes that go with a move, in the same update as the status.
+ * Paying starts the origin park's drop-off deadline (48 h by default).
+ */
 function sideEffects(
   from: ParcelStatus,
   to: ParcelStatus,
   now: Date,
+  dropoffDeadlineHours: number,
 ): Prisma.ParcelUpdateManyMutationInput {
   if (from === "DRAFT" && to === "AWAITING_DROPOFF") {
     return {
       draftExpiresAt: null,
       dropoffDeadline: new Date(
-        now.getTime() + DROPOFF_WINDOW_HOURS * 60 * 60 * 1000,
+        now.getTime() + dropoffDeadlineHours * 60 * 60 * 1000,
       ),
     };
   }
@@ -756,7 +758,16 @@ function codeSecret(): string {
   return requireEnv("AUTH_JWT_SECRET");
 }
 
-/** Storage owed: 0 inside the free window (from the arrival notice), then daily rate (COL-6). */
+/**
+ * Storage owed at the arrival park at time `at` (COL-6), real since Scope 03
+ * sl4: nothing inside the free window, which starts when the recipient is
+ * told the parcel arrived; then the destination park's daily rate for the
+ * parcel's size per started day, up to the maximum hold, stopping at
+ * collection and leaving out days already paid. Rules in ./storage.ts.
+ *
+ * Returns { storageKobo, freeUntil (null until the arrival notice),
+ * daysCharged }. Throws ParcelError parcel_not_found (404).
+ */
 export async function storageDues(
   parcelId: string,
   at: Date = new Date(),
@@ -765,11 +776,43 @@ export async function storageDues(
   freeUntil: string | null;
   daysCharged: number;
 }> {
-  void parcelId;
-  void at;
-  return stub({
-    storageKobo: 0,
-    freeUntil: "2026-11-23T13:10:00+00:00",
-    daysCharged: 0,
+  const parcel = await db.parcel.findUnique({
+    where: { id: parcelId },
+    select: {
+      sizeClass: true,
+      destinationParkId: true,
+      arrivalNotifiedAt: true,
+      storagePaidUntil: true,
+      destinationPark: {
+        select: { storageWindowHours: true, maxHoldDays: true },
+      },
+      events: {
+        where: { type: "COLLECTED" },
+        orderBy: { createdAt: "asc" },
+        take: 1,
+        select: { createdAt: true },
+      },
+    },
+  });
+  if (!parcel) {
+    throw new ParcelError("parcel_not_found", "Parcel not found.", 404);
+  }
+  const rate = await db.storageRate.findFirst({
+    where: {
+      parkId: parcel.destinationParkId,
+      sizeClass: parcel.sizeClass,
+      effectiveFrom: { lte: at },
+    },
+    orderBy: { effectiveFrom: "desc" },
+    select: { dailyRateKobo: true },
+  });
+  return computeStorageDues({
+    notifiedAt: parcel.arrivalNotifiedAt,
+    windowHours: parcel.destinationPark.storageWindowHours,
+    maxHoldDays: parcel.destinationPark.maxHoldDays,
+    dailyRateKobo: rate?.dailyRateKobo ?? 0,
+    paidUntil: parcel.storagePaidUntil,
+    collectedAt: parcel.events[0]?.createdAt ?? null,
+    at,
   });
 }
