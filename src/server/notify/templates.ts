@@ -66,6 +66,12 @@ const eta = (c: MessageContext) =>
     : "We'll tell you when it's close";
 
 const link = (url: string | null) => (url ? ` ${url}` : "");
+/** Storage the recipient paid is none of the sender's business. */
+const senderSkips = (c: MessageContext) =>
+  c.extra.payer === "recipient" && c.extra.purpose !== "POD";
+/** The receipt page when the payment gave one (PAY-8), else `fallback`. */
+const receiptLink = (c: MessageContext, fallback: string | null) =>
+  typeof c.extra.receiptUrl === "string" ? c.extra.receiptUrl : fallback;
 
 const TEMPLATES: Partial<Record<`${NotificationEvent}.${Audience}`, Template>> =
   {
@@ -140,8 +146,16 @@ const TEMPLATES: Partial<Record<`${NotificationEvent}.${Audience}`, Template>> =
     "missing_at_tickoff.driver": (c) =>
       `ParkTrack: ${c.parcelCode} was missing at tick-off at ${c.destinationPark.name}. A dispute is open; please speak to the park.${link(c.links.driver)}`,
 
+    // The sender paid, or it's their pay-on-delivery money (vendor).
     "payment_receipt.sender": (c) =>
-      `ParkTrack: payment of ${formatNaira(Number(c.extra.amountKobo ?? c.totalKobo))} received for ${c.parcelCode}${c.extra.txnRef ? ` (ref ${c.extra.txnRef})` : ""}.${link(c.links.sender)}`,
+      senderSkips(c)
+        ? ""
+        : `ParkTrack: payment of ${formatNaira(Number(c.extra.amountKobo ?? c.totalKobo))} received for ${c.parcelCode}${c.extra.txnRef ? ` (ref ${c.extra.txnRef})` : ""}.${link(receiptLink(c, c.links.sender))}`,
+    // Only when the recipient paid (pay on delivery, storage).
+    "payment_receipt.recipient": (c) =>
+      c.extra.payer === "sender"
+        ? ""
+        : `ParkTrack: you paid ${formatNaira(Number(c.extra.amountKobo ?? c.podAmountKobo))} for ${c.parcelCode}${c.extra.txnRef ? ` (ref ${c.extra.txnRef})` : ""}. Your receipt:${link(receiptLink(c, c.links.recipient))}`,
   };
 
 // ─── Nigerian Pidgin (NOT-2, P1) ────────────────────────────────────────────
@@ -229,7 +243,13 @@ const PCM_TEMPLATES: Partial<
     `ParkTrack: ${c.parcelCode} no dey when dem tick your load for ${c.destinationPark.name}. Dispute don open; abeg talk to the park.${link(c.links.driver)}`,
 
   "payment_receipt.sender": (c) =>
-    `ParkTrack: we don receive ${formatNaira(Number(c.extra.amountKobo ?? c.totalKobo))} for ${c.parcelCode}${c.extra.txnRef ? ` (ref ${c.extra.txnRef})` : ""}.${link(c.links.sender)}`,
+    senderSkips(c)
+      ? ""
+      : `ParkTrack: we don receive ${formatNaira(Number(c.extra.amountKobo ?? c.totalKobo))} for ${c.parcelCode}${c.extra.txnRef ? ` (ref ${c.extra.txnRef})` : ""}.${link(receiptLink(c, c.links.sender))}`,
+  "payment_receipt.recipient": (c) =>
+    c.extra.payer === "sender"
+      ? ""
+      : `ParkTrack: you don pay ${formatNaira(Number(c.extra.amountKobo ?? c.podAmountKobo))} for ${c.parcelCode}${c.extra.txnRef ? ` (ref ${c.extra.txnRef})` : ""}. Your receipt:${link(receiptLink(c, c.links.recipient))}`,
 };
 
 /** Message language: the profile's Language enum. */

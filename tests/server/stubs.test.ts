@@ -84,16 +84,12 @@ describe("service stubs", () => {
     // src/server/uploads/*.test.ts.
     expect(uploads.STUB).toBe(false);
 
-    valid(
-      A.StartPayment.response,
-      await payments.startPayment("p", "SHIPPING", {
-        kind: "user",
-        userId: "u",
-      }),
-    );
-    valid(D.PaymentStatusView, await payments.requery("ISW-PT-8F3KQ2"));
-    valid(D.LedgerView, await ledger.ledger({ account: "PARK" }));
-    valid(D.EarningsView, await ledger.driverEarnings("d", "week"));
+    // payments is real since Scope 04 (sl2–sl9; needs a database and
+    // Interswitch); see src/server/payments/*.test.ts.
+    expect(payments.STUB).toBe(false);
+    // ledger is real since Scope 04 sl7 (needs a database); see
+    // src/server/ledger/*.test.ts.
+    expect(ledger.STUB).toBe(false);
 
     valid(
       A.CreateParcel.response,

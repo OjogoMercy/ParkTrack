@@ -236,3 +236,63 @@ describe("Pidgin (PCM)", () => {
     );
   });
 });
+
+describe("payment receipt (PAY-8)", () => {
+  const receiptUrl = "https://parktrack.ng/pay/ISW-PT-3QW81M/receipt";
+  const extra = (over: Record<string, string | number>) => ({
+    amountKobo: 2_500_000,
+    txnRef: "ISW-PT-3QW81M",
+    receiptUrl,
+    ...over,
+  });
+
+  it("goes to whoever paid, with the receipt link, in both languages", () => {
+    for (const lang of ["EN", "PCM"] as const) {
+      const pod = context({
+        extra: extra({ payer: "recipient", purpose: "POD" }),
+      });
+      const recipient = renderMessage(
+        "payment_receipt",
+        "recipient",
+        pod,
+        lang,
+      )!;
+      expect(recipient).toContain("₦25,000");
+      expect(recipient).toContain("ISW-PT-3QW81M");
+      expect(recipient).toContain(receiptUrl);
+      // The vendor hears about their pay-on-delivery money too.
+      expect(renderMessage("payment_receipt", "sender", pod, lang)).toContain(
+        receiptUrl,
+      );
+
+      const topUp = context({
+        extra: extra({ payer: "sender", purpose: "TOP_UP" }),
+      });
+      expect(renderMessage("payment_receipt", "sender", topUp, lang)).toContain(
+        receiptUrl,
+      );
+      expect(renderMessage("payment_receipt", "recipient", topUp, lang)).toBe(
+        "",
+      );
+
+      const storage = context({
+        extra: extra({ payer: "recipient", purpose: "STORAGE" }),
+      });
+      expect(renderMessage("payment_receipt", "sender", storage, lang)).toBe(
+        "",
+      );
+      expect(
+        renderMessage("payment_receipt", "recipient", storage, lang),
+      ).toContain(receiptUrl);
+    }
+  });
+
+  it("without a receipt link, falls back to each person's own link", () => {
+    expect(
+      renderMessage("payment_receipt", "sender", context({ extra: {} })),
+    ).toContain(links.sender);
+    expect(
+      renderMessage("payment_receipt", "recipient", context({ extra: {} })),
+    ).toContain(links.recipient);
+  });
+});
