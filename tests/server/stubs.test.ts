@@ -101,8 +101,9 @@ describe("service stubs", () => {
       }),
     );
     valid(A.ListMyParcels.response, await booking.listMyParcels("u", "active"));
-    valid(z.array(D.SavedRecipientDto), await recipients.listRecipients("u"));
-    valid(D.Profile, await vendors.getProfile("u"));
+    // recipients and vendors are real since Scope 05 sl2 (need a database).
+    expect(recipients.STUB).toBe(false);
+    expect(vendors.STUB).toBe(false);
 
     valid(D.HandshakeView, await handshake.getForAgent("x", "a"));
     valid(
