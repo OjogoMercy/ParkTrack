@@ -1,6 +1,7 @@
 "use client";
 
 import { Info } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { BookingInput } from "@/contracts/api";
 import type { BySize, Quote } from "@/contracts/dto";
@@ -104,7 +105,9 @@ export function BookingForm({
   const [pod, setPod] = useState(false);
   const [podAmount, setPodAmount] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [ready, setReady] = useState(false);
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const route = routes.find((r) => r.id === routeId) ?? routes[0];
   const quote = estimates[route.id]?.[size];
@@ -113,7 +116,7 @@ export function BookingForm({
   const pickRecipient = (id: string) => {
     setWho(id);
     setErrors({});
-    setReady(false);
+    setFormError(null);
     const r = recipients.find((x) => x.id === id);
     if (!r) {
       setName("");
@@ -147,7 +150,7 @@ export function BookingForm({
     return `Collected at ${route.destinationName}. ${route.storage.windowHours} hours free from when they’re told it arrived, then ${formatNaira(rate)} a day.`;
   }, [route, size]);
 
-  const review = () => {
+  const review = async () => {
     const found: Record<string, string> = {};
     const declaredKobo = nairaToKobo(declared);
     if (declaredKobo === null || declaredKobo <= 0) {
@@ -184,15 +187,53 @@ export function BookingForm({
       }
     }
     setErrors(found);
-    const ok = Object.keys(found).length === 0;
-    setReady(ok);
-    if (!ok) {
-      // Take them to the first problem.
-      const first = Object.keys(found)[0];
-      document
-        .querySelector<HTMLElement>(`[data-field="${first}"]`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFormError(null);
+    if (Object.keys(found).length || !parsed.success) {
+      showFirst(found);
+      return;
     }
+
+    // Create the unpaid booking, then review and pay it (S04).
+    setBusy(true);
+    try {
+      const res = await fetch("/api/parcels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed.data),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        parcel?: { parcelCode: string };
+        error?: { message?: string; fields?: Record<string, string> };
+      } | null;
+      if (res.ok && json?.parcel) {
+        router.push(
+          `/send/review?parcel=${encodeURIComponent(json.parcel.parcelCode)}`,
+        );
+        return; // stay busy while the review page loads
+      }
+      if (res.status === 401) {
+        router.push(`/signin?next=${encodeURIComponent("/send")}`);
+        return;
+      }
+      const fields = json?.error?.fields ?? {};
+      setErrors(fields);
+      setFormError(
+        json?.error?.message ?? "Couldn’t save the booking. Try again.",
+      );
+      showFirst(fields);
+    } catch {
+      setFormError("No connection. Check your data and try again.");
+    }
+    setBusy(false);
+  };
+
+  // Take them to the first problem.
+  const showFirst = (fields: Record<string, string>) => {
+    const first = Object.keys(fields)[0];
+    if (!first) return;
+    document
+      .querySelector<HTMLElement>(`[data-field="${first}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   const err = (key: string) => errors[key];
@@ -214,8 +255,8 @@ export function BookingForm({
               </span>
             ) : null}
           </div>
-          <Button className="px-6" onClick={review}>
-            Review
+          <Button className="px-6" onClick={review} disabled={busy}>
+            {busy ? "Saving…" : "Review"}
           </Button>
         </BottomBar>
       }
@@ -233,7 +274,7 @@ export function BookingForm({
                   onChange={(e) => {
                     setRouteId(e.target.value);
                     setPointId("");
-                    setReady(false);
+                    setFormError(null);
                   }}
                 >
                   {routes.map((r) => (
@@ -259,7 +300,7 @@ export function BookingForm({
                 value={mode}
                 onChange={(m) => {
                   setMode(m);
-                  setReady(false);
+                  setFormError(null);
                 }}
               />
             </div>
@@ -396,7 +437,7 @@ export function BookingForm({
                 value={size}
                 onChange={(s) => {
                   setSize(s);
-                  setReady(false);
+                  setFormError(null);
                 }}
               />
             </div>
@@ -438,7 +479,7 @@ export function BookingForm({
               checked={pod}
               onCheckedChange={(v) => {
                 setPod(v);
-                setReady(false);
+                setFormError(null);
               }}
               aria-label="Collect payment on delivery"
             />
@@ -459,11 +500,8 @@ export function BookingForm({
           ) : null}
         </Card>
 
-        {ready ? (
-          <Notice tone="green">
-            Everything looks right. Reviewing and paying arrive in the next
-            update (Scope 05 sl4).
-          </Notice>
+        {formError ? (
+          <Notice tone="red">{formError}</Notice>
         ) : Object.keys(errors).length ? (
           <Notice tone="red">Check the highlighted fields.</Notice>
         ) : null}

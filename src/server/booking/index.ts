@@ -1,18 +1,19 @@
 /**
  * Owned by Scope 05 (docs/scopes/05-sender-app.md). Exported names and
  * types are FINAL; callers never change. Being replaced slice by slice:
- * parkEstimates (sl1) and bookingLimits (sl3) are real; createBooking (sl4)
- * and listMyParcels (sl6)
- * still return fixture data. STUB stays true until every function is real.
+ * parkEstimates (sl1), bookingLimits (sl3), createBooking and draftForReview
+ * (sl4) are real; listMyParcels (sl6) still returns fixture data. STUB stays
+ * true until every function is real.
  */
 import { cacheLife, cacheTag } from "next/cache";
 import type { BookingInput } from "@/contracts/api";
 import type { ParcelSummary, Quote, VendorTotals } from "@/contracts/dto";
-import { SIZE_CLASSES, type SizeClass } from "@/contracts/enums";
+import { SIZE_CLASSES, SIZE_LABELS, type SizeClass } from "@/contracts/enums";
 import { db } from "@/lib/db";
-import { myParcels, parcelAwaiting, quoteMedium } from "@/mocks/fixtures";
+import { myParcels } from "@/mocks/fixtures";
 import { stub } from "@/mocks/stub";
-import { quote } from "@/server/parcels";
+import { createDraft, quote } from "@/server/parcels";
+import { createRecipient, RecipientError } from "@/server/recipients";
 import { parkCacheTag } from "@/server/parks";
 
 export const STUB = true;
@@ -24,17 +25,141 @@ export type BookingContext = {
   createdByUserId: string;
 };
 
-/** S03 booking (also walk-ins from Scope 06): validates, quotes, creates the DRAFT. */
+/**
+ * S03 booking (also walk-ins from Scope 06): validates, quotes, creates the
+ * DRAFT through the parcel engine (createDraft: prohibited items, route,
+ * drop point, price snapshot, 24 h expiry). When the sender asked, the
+ * recipient is saved to their list; a duplicate or a full list never stops
+ * the booking. Throws ParcelError (invalid_booking, prohibited_item,
+ * pod_too_high 400; route_not_found 404).
+ */
 export async function createBooking(
   input: BookingInput,
   ctx: BookingContext,
 ): Promise<{ parcel: ParcelSummary; quote: Quote }> {
-  void input;
-  void ctx;
-  return stub({
-    parcel: { ...parcelAwaiting, status: "DRAFT" },
-    quote: quoteMedium,
+  const parcel = await createDraft({ ...input, ...ctx });
+
+  if (input.saveRecipient && ctx.createdBy === "SENDER" && ctx.senderId) {
+    await createRecipient(ctx.senderId, {
+      name: input.recipient.name,
+      phone: input.recipient.phone,
+      preferredParkId:
+        input.deliveryMode === "PARK" ? input.destinationParkId : null,
+      preferredRoadsidePointId:
+        input.deliveryMode === "ROADSIDE"
+          ? (input.roadsidePointId ?? null)
+          : null,
+    }).catch((e: unknown) => {
+      if (!(e instanceof RecipientError)) {
+        console.error("[booking] saving the recipient", e);
+      }
+    });
+  }
+
+  return { parcel, quote: await snapshotQuote(parcel.id) };
+}
+
+/** The price the booking was made at (BOOK-4), as S04 lists it. */
+async function snapshotQuote(parcelId: string): Promise<Quote> {
+  const p = await db.parcel.findUniqueOrThrow({
+    where: { id: parcelId },
+    select: {
+      sizeClass: true,
+      fareKobo: true,
+      platformFeeKobo: true,
+      insuranceKobo: true,
+      totalKobo: true,
+      podAmountKobo: true,
+    },
   });
+  return {
+    fareKobo: p.fareKobo,
+    platformFeeKobo: p.platformFeeKobo,
+    insuranceKobo: p.insuranceKobo,
+    totalKobo: p.totalKobo,
+    podAmountKobo: p.podAmountKobo,
+    lines: [
+      {
+        label: `Fare · ${SIZE_LABELS[p.sizeClass].name}`,
+        amountKobo: p.fareKobo,
+      },
+      { label: "Service fee", amountKobo: p.platformFeeKobo },
+      ...(p.insuranceKobo
+        ? [{ label: "Insurance", amountKobo: p.insuranceKobo }]
+        : []),
+    ],
+  };
+}
+
+export type DraftReview = {
+  id: string;
+  parcelCode: string;
+  status: ParcelSummary["status"];
+  /** Past its 24 hours and still unpaid. */
+  expired: boolean;
+  originCity: string;
+  originName: string;
+  destination: { city: string; name: string };
+  deliveryMode: "PARK" | "ROADSIDE";
+  roadsidePointName: string | null;
+  sizeClass: SizeClass;
+  recipientName: string;
+  recipientPhone: string;
+  category: string;
+  description: string;
+  declaredValueKobo: number;
+  podAmountKobo: number;
+  dropoffDeadlineHours: number;
+  quote: Quote;
+};
+
+/**
+ * S04: a booking of this sender, made at this park, by its PT- code. Null
+ * when there is none (someone else's code looks the same as a wrong one).
+ */
+export async function draftForReview(
+  senderId: string,
+  originParkSlug: string,
+  parcelCode: string,
+): Promise<DraftReview | null> {
+  const p = await db.parcel.findFirst({
+    where: {
+      parcelCode: parcelCode.toUpperCase(),
+      senderId,
+      originPark: { slug: originParkSlug },
+    },
+    include: {
+      originPark: {
+        select: { city: true, name: true, dropoffDeadlineHours: true },
+      },
+      destinationPark: { select: { city: true, name: true } },
+      roadsidePoint: { select: { name: true } },
+    },
+  });
+  if (!p) return null;
+  return {
+    id: p.id,
+    parcelCode: p.parcelCode,
+    status: p.status,
+    expired:
+      p.status === "DRAFT" &&
+      !!p.draftExpiresAt &&
+      p.draftExpiresAt.getTime() <= Date.now(),
+    originCity: p.originPark.city,
+    originName: p.originPark.name,
+    destination: p.destinationPark,
+    deliveryMode: p.deliveryMode,
+    roadsidePointName: p.roadsidePoint?.name ?? null,
+    sizeClass: p.sizeClass,
+    recipientName: p.recipientName,
+    recipientPhone: p.recipientPhone,
+    category: p.category,
+    description: p.description,
+    declaredValueKobo: p.declaredValueKobo,
+    podAmountKobo: p.podAmountKobo,
+    dropoffDeadlineHours: p.originPark.dropoffDeadlineHours,
+    quote: await snapshotQuote(p.id),
+  };
 }
 
 /** S08 my parcels, with vendor totals when the sender is a vendor. */
