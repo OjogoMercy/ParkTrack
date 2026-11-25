@@ -17,7 +17,8 @@ import { db } from "@/lib/db";
 import { serverEnv } from "@/lib/env";
 import { txnRef as newTxnRef } from "@/lib/ids";
 import { stub } from "@/mocks/stub";
-import { holdPayment } from "@/server/ledger";
+import { holdPayment, shortParkName } from "@/server/ledger";
+import { notify } from "@/server/notify";
 import { siteUrl } from "@/server/notify/links";
 import {
   issueCollectionCode,
@@ -420,7 +421,9 @@ async function checkPayment(
   }
   const latest = await db.payment.findUniqueOrThrow({ where: { txnRef } });
   if (latest.status === "VERIFIED") {
-    await applyVerifiedPayment(latest.id);
+    const { applied } = await applyVerifiedPayment(latest.id);
+    // Only the call that applied it sends the receipt: once per payment.
+    if (applied) await sendReceipt(latest);
     // Applied (or flagged for a refund): nothing left for the job to do.
     if (latest.nextRequeryAt) {
       await db.payment.update({
@@ -577,6 +580,87 @@ export async function paymentStatus(
           : null,
     parcelCode: payment.parcel.parcelCode,
     returnTo,
+  };
+}
+
+/**
+ * Receipt message with the receipt link (PAY-8). Shipping has none of its
+ * own: booking_paid ("payment received ...") goes out at the same moment
+ * and the booking page links to the receipt. Never throws.
+ */
+async function sendReceipt(payment: {
+  parcelId: string;
+  purpose: string;
+  amountKobo: number;
+  txnRef: string;
+}): Promise<void> {
+  if (payment.purpose === "SHIPPING") return;
+  await notify("payment_receipt", payment.parcelId, {
+    amountKobo: payment.amountKobo,
+    txnRef: payment.txnRef,
+    receiptUrl: receiptUrl(payment.txnRef),
+  });
+}
+
+/** parktrack.ng/pay/{ref}/receipt */
+export function receiptUrl(txnRef: string): string {
+  return siteUrl(
+    serverEnv().ROOT_DOMAIN,
+    null,
+    `/pay/${encodeURIComponent(txnRef)}/receipt`,
+  );
+}
+
+export type PaymentReceipt = {
+  txnRef: string;
+  status: PaymentStatusView["status"];
+  purpose: PayablePurpose;
+  amountKobo: number;
+  paidAt: Date | null;
+  parcelCode: string;
+  /** "Ogbomoso → Iwo Road" */
+  route: string;
+  /** Interswitch's own payment reference, when it gave one. */
+  providerRef: string | null;
+  /** Verified but flagged to be refunded (duplicate, cancelled, ...). */
+  refundPending: boolean;
+};
+
+/**
+ * The receipt for a payment (PAY-8): amount, reference, purpose, time and
+ * the parcel it paid for. No names or phone numbers, since the link is
+ * shared by WhatsApp. Null when the reference is unknown.
+ */
+export async function paymentReceipt(
+  txnRef: string,
+): Promise<PaymentReceipt | null> {
+  const payment = await db.payment.findUnique({
+    where: { txnRef },
+    include: {
+      parcel: {
+        select: {
+          parcelCode: true,
+          originPark: { select: { name: true } },
+          destinationPark: { select: { name: true } },
+        },
+      },
+    },
+  });
+  if (!payment) return null;
+  const raw = (payment.rawResponse ?? {}) as {
+    needsRefund?: boolean;
+    answer?: { paymentReference?: string | null };
+  };
+  return {
+    txnRef: payment.txnRef,
+    status: payment.status,
+    purpose: payment.purpose as PayablePurpose,
+    amountKobo: payment.amountKobo,
+    paidAt: payment.verifiedAt,
+    parcelCode: payment.parcel.parcelCode,
+    route: `${shortParkName(payment.parcel.originPark.name)} → ${shortParkName(payment.parcel.destinationPark.name)}`,
+    providerRef: raw.answer?.paymentReference ?? null,
+    refundPending: raw.needsRefund === true,
   };
 }
 
