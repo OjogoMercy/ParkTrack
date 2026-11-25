@@ -25,6 +25,7 @@ import {
   transition,
 } from "@/server/parcels";
 import { PaymentError } from "./errors";
+import { REPLACED_REASON, REVIEW_MESSAGE } from "./messages";
 import { SIGNATURE_HEADER, parseWebhook, verifySignature } from "./webhook";
 import {
   checkoutForm,
@@ -515,12 +516,6 @@ async function recordVerdict(
   });
 }
 
-const REPLACED_REASON = "Replaced by a newer checkout";
-
-/** What the payer sees when a payment needs a person to check it. */
-const REVIEW_MESSAGE =
-  "We couldn't confirm this payment. Our team will check it and contact you; don't pay again";
-
 /** What the payer sees for a payment (S05/S06), without asking Interswitch. */
 export async function paymentStatus(
   txnRef: string,
@@ -538,6 +533,8 @@ export async function paymentStatus(
     reason?: string | null;
     needsReview?: boolean;
     replaced?: boolean;
+    needsRefund?: boolean;
+    refundReason?: string;
   };
   const root = serverEnv().ROOT_DOMAIN;
   const returnTo =
@@ -555,17 +552,23 @@ export async function paymentStatus(
     status: payment.status,
     responseCode: payment.responseCode,
     reason:
-      payment.status === "FAILED" && raw.reason
-        ? // Interswitch's reason with its code, e.g. "Insufficient Funds
-          // (51)" (S06). Not "(00)" on a payment held for review.
-          payment.responseCode &&
-          payment.responseCode !== "00" &&
-          !raw.needsReview &&
-          !raw.replaced &&
-          /^[0-9A-Z]{2,3}$/.test(payment.responseCode)
-          ? `${raw.reason} (${payment.responseCode})`
-          : raw.reason
-        : null,
+      // Verified but not usable (already paid, cancelled, ...): why it
+      // will be refunded. The /pay screen shows this instead of moving on.
+      payment.status === "VERIFIED"
+        ? raw.needsRefund
+          ? (raw.refundReason ?? "This payment couldn't be used")
+          : null
+        : payment.status === "FAILED" && raw.reason
+          ? // Interswitch's reason with its code, e.g. "Insufficient Funds
+            // (51)" (S06). Not "(00)" on a payment held for review.
+            payment.responseCode &&
+            payment.responseCode !== "00" &&
+            !raw.needsReview &&
+            !raw.replaced &&
+            /^[0-9A-Z]{2,3}$/.test(payment.responseCode)
+            ? `${raw.reason} (${payment.responseCode})`
+            : raw.reason
+          : null,
     parcelCode: payment.parcel.parcelCode,
     returnTo,
   };
