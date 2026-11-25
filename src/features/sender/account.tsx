@@ -1,14 +1,16 @@
 "use client";
 
-import { ChevronRight, LogOut, Plus } from "lucide-react";
+import { Building2, ChevronRight, LogOut, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Profile } from "@/contracts/dto";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/choice";
 import { Avatar } from "@/components/ui/display";
 import { Field, Input, PhoneInput, Select } from "@/components/ui/field";
 import { Sheet } from "@/components/ui/sheet";
-import { Card, List, Notice, Section } from "@/components/ui/surface";
+import { Card, KeyValue, List, Notice, Section } from "@/components/ui/surface";
 import { formatPhone } from "@/lib/phone";
 
 type ApiResult = {
@@ -19,7 +21,7 @@ type ApiResult = {
 
 /** JSON call to our own API; errors come back in the shared ApiError shape. */
 async function call(
-  method: "POST" | "PATCH" | "DELETE",
+  method: "POST" | "PATCH" | "PUT" | "DELETE",
   url: string,
   body?: unknown,
 ): Promise<ApiResult> {
@@ -344,6 +346,262 @@ function RecipientSheet({
             {confirmRemove ? `Yes, remove ${existing.name}` : "Remove"}
           </Button>
         ) : null}
+      </form>
+    </Sheet>
+  );
+}
+
+// ─── Business (vendors) ─────────────────────────────────────────────────────
+
+/** Banks and wallets vendors in the pilot use; "Other" for anything else. */
+const BANKS = [
+  "Access Bank",
+  "Ecobank",
+  "Fidelity Bank",
+  "First Bank",
+  "FCMB",
+  "GTBank",
+  "Keystone Bank",
+  "Kuda",
+  "Moniepoint",
+  "OPay",
+  "PalmPay",
+  "Polaris Bank",
+  "Stanbic IBTC",
+  "Sterling Bank",
+  "UBA",
+  "Union Bank",
+  "Wema Bank",
+  "Zenith Bank",
+];
+
+/**
+ * S12 Business: a sender becomes a vendor (pay on delivery credited to
+ * them after delivery, the "Collected for you" strip in S08) by adding a
+ * business name; payout details are optional. Only the last 4 digits of
+ * the account number leave this screen (real payouts are post-pilot).
+ */
+export function Business({
+  vendor,
+  podFeeBps,
+}: {
+  vendor: Profile["vendor"];
+  podFeeBps: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const fee = `${Number((podFeeBps / 100).toFixed(2))}%`;
+  return (
+    <Section
+      title="Business"
+      action={
+        vendor ? (
+          <Badge tone="volt" dot={false}>
+            Vendor
+          </Badge>
+        ) : null
+      }
+    >
+      {vendor ? (
+        <Card className="px-4 py-1">
+          <KeyValue label="Business" value={vendor.businessName} />
+          <KeyValue
+            label="Payout account"
+            value={
+              vendor.payoutAccountLast4
+                ? `${vendor.payoutBank ?? "Bank"} ···· ${vendor.payoutAccountLast4}`
+                : "Not added yet"
+            }
+          />
+          <div className="border-t border-line py-2">
+            <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+              Edit business details
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <Card className="flex items-start gap-3 p-4">
+          <span className="pt-0.5 text-fg-2 [&_svg]:size-4" aria-hidden>
+            <Building2 />
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-sub font-medium">Sell on ParkTrack</span>
+            <span className="text-small text-fg-3">
+              Collect payment on delivery from your customers. It’s credited to
+              you after delivery, less {fee}.
+            </span>
+          </div>
+          <Switch
+            checked={open}
+            onCheckedChange={setOpen}
+            aria-label="Sell on ParkTrack"
+          />
+        </Card>
+      )}
+      <BusinessSheet
+        key={open ? "open" : "closed"}
+        open={open}
+        onClose={() => setOpen(false)}
+        vendor={vendor}
+      />
+    </Section>
+  );
+}
+
+function BusinessSheet({
+  open,
+  onClose,
+  vendor,
+}: {
+  open: boolean;
+  onClose: () => void;
+  vendor: Profile["vendor"];
+}) {
+  const router = useRouter();
+  const knownBank = !vendor?.payoutBank || BANKS.includes(vendor.payoutBank);
+  const [name, setName] = useState(vendor?.businessName ?? "");
+  const [bank, setBank] = useState(
+    vendor?.payoutBank ? (knownBank ? vendor.payoutBank : "other") : "",
+  );
+  const [otherBank, setOtherBank] = useState(
+    knownBank ? "" : (vendor?.payoutBank ?? ""),
+  );
+  const [accountName, setAccountName] = useState(
+    vendor?.payoutAccountName ?? "",
+  );
+  const [accountNumber, setAccountNumber] = useState("");
+  const [result, setResult] = useState<ApiResult | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    const fields: Record<string, string> = {};
+    const digits = accountNumber.replace(/\s/g, "");
+    if (digits && !/^\d{10}$/.test(digits)) {
+      fields.payoutAccountLast4 = "Enter your 10-digit account number";
+    }
+    const bankName = bank === "other" ? otherBank.trim() : bank;
+    if (digits && !bankName) fields.payoutBank = "Choose your bank";
+    if (Object.keys(fields).length) {
+      setResult({
+        ok: false,
+        message: "Check the highlighted fields.",
+        fields,
+      });
+      return;
+    }
+    setBusy(true);
+    const r = await call("PUT", "/api/me/vendor", {
+      businessName: name,
+      ...(bankName ? { payoutBank: bankName } : {}),
+      ...(accountName.trim() ? { payoutAccountName: accountName.trim() } : {}),
+      // Only the last 4 digits; keep the saved ones when left empty.
+      ...(digits
+        ? { payoutAccountLast4: digits.slice(-4) }
+        : vendor?.payoutAccountLast4
+          ? { payoutAccountLast4: vendor.payoutAccountLast4 }
+          : {}),
+    });
+    setBusy(false);
+    setResult(r);
+    if (r.ok) {
+      onClose();
+      router.refresh();
+    }
+  };
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(o) => (o ? null : onClose())}
+      title={vendor ? "Business details" : "Sell on ParkTrack"}
+      description="Your business name shows on parcels you send. Payout details are optional for now."
+    >
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <Field label="Business name" error={result?.fields?.businessName}>
+          {(ids) => (
+            <Input
+              {...ids}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Tolu’s Fabrics"
+              required
+              minLength={2}
+              maxLength={80}
+            />
+          )}
+        </Field>
+        <Field label="Bank" error={result?.fields?.payoutBank}>
+          {(ids) => (
+            <Select
+              {...ids}
+              value={bank}
+              onChange={(e) => setBank(e.target.value)}
+            >
+              <option value="">Not now</option>
+              {BANKS.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+              <option value="other">Other</option>
+            </Select>
+          )}
+        </Field>
+        {bank === "other" ? (
+          <Field label="Bank name">
+            {(ids) => (
+              <Input
+                {...ids}
+                value={otherBank}
+                onChange={(e) => setOtherBank(e.target.value)}
+                maxLength={60}
+              />
+            )}
+          </Field>
+        ) : null}
+        <Field label="Account name">
+          {(ids) => (
+            <Input
+              {...ids}
+              value={accountName}
+              onChange={(e) => setAccountName(e.target.value)}
+              maxLength={80}
+              autoComplete="off"
+            />
+          )}
+        </Field>
+        <Field
+          label="Account number"
+          hint={
+            vendor?.payoutAccountLast4
+              ? `Saved: ···· ${vendor.payoutAccountLast4}. Leave empty to keep it. We keep only the last 4 digits until payouts start.`
+              : "We keep only the last 4 digits until payouts start."
+          }
+          error={result?.fields?.payoutAccountLast4}
+        >
+          {(ids) => (
+            <Input
+              {...ids}
+              value={accountNumber}
+              onChange={(e) => setAccountNumber(e.target.value)}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="10 digits"
+              maxLength={12}
+            />
+          )}
+        </Field>
+        {result && !result.ok && !result.fields ? (
+          <Notice tone="red">{result.message}</Notice>
+        ) : null}
+        <Button type="submit" size="lg" block disabled={busy}>
+          {busy ? "Saving…" : vendor ? "Save changes" : "Start selling"}
+        </Button>
       </form>
     </Sheet>
   );
