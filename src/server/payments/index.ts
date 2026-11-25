@@ -584,7 +584,7 @@ export async function paymentStatus(
 }
 
 /**
- * Receipt message with the receipt link (PAY-8). Shipping has none of its
+ * Receipt message with the receipt link (PAY-8), to whoever paid. Shipping has none of its
  * own: booking_paid ("payment received ...") goes out at the same moment
  * and the booking page links to the receipt. Never throws.
  */
@@ -599,6 +599,13 @@ async function sendReceipt(payment: {
     amountKobo: payment.amountKobo,
     txnRef: payment.txnRef,
     receiptUrl: receiptUrl(payment.txnRef),
+    purpose: payment.purpose,
+    // Who paid hears about it (contract/receipt-recipient): the recipient
+    // for pay on delivery and storage, the sender otherwise.
+    payer:
+      payment.purpose === "POD" || payment.purpose === "STORAGE"
+        ? "recipient"
+        : "sender",
   });
 }
 
