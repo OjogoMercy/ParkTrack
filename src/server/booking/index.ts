@@ -1,22 +1,21 @@
 /**
  * Owned by Scope 05 (docs/scopes/05-sender-app.md). Exported names and
- * types are FINAL; callers never change. Being replaced slice by slice:
- * parkEstimates (sl1), bookingLimits (sl3), createBooking, draftForReview
- * (sl4) and bookedParcel (sl5) are real; listMyParcels (sl6) still returns fixture data. STUB stays
- * true until every function is real.
+ * types are FINAL; callers never change. Real since sl6: parkEstimates
+ * (sl1), bookingLimits (sl3), createBooking and draftForReview (sl4),
+ * bookedParcel (sl5), listMyParcels (sl6).
  */
 import { cacheLife, cacheTag } from "next/cache";
 import type { BookingInput } from "@/contracts/api";
 import type { ParcelSummary, Quote, VendorTotals } from "@/contracts/dto";
 import { SIZE_CLASSES, SIZE_LABELS, type SizeClass } from "@/contracts/enums";
 import { db } from "@/lib/db";
-import { myParcels } from "@/mocks/fixtures";
-import { stub } from "@/mocks/stub";
+import type { ParcelStatus } from "@/contracts/enums";
 import { createDraft, quote } from "@/server/parcels";
+import { summaryInclude, toParcelSummary } from "@/server/parcels/summary";
 import { createRecipient, RecipientError } from "@/server/recipients";
 import { parkCacheTag } from "@/server/parks";
 
-export const STUB = true;
+export const STUB = false;
 
 export type BookingContext = {
   originParkId: string;
@@ -162,14 +161,113 @@ export async function draftForReview(
   };
 }
 
-/** S08 my parcels, with vendor totals when the sender is a vendor. */
+/** Which statuses each S08 tab shows. */
+export const PARCEL_TABS: Record<
+  "active" | "delivered" | "drafts",
+  readonly ParcelStatus[]
+> = {
+  active: [
+    "AWAITING_DROPOFF",
+    "RECEIVED_AT_ORIGIN",
+    "ASSIGNED",
+    "IN_TRANSIT",
+    "ARRIVED",
+    "UNCLAIMED",
+    "DISPUTED",
+  ],
+  delivered: [
+    "DELIVERED_ROADSIDE",
+    "COLLECTED",
+    "SETTLED",
+    "RETURNED",
+    "RESOLVED",
+    "CANCELLED",
+  ],
+  drafts: ["DRAFT"],
+};
+
+/** Newest first; enough for anyone's phone screen. */
+const LIST_LIMIT = 50;
+
+/**
+ * S08 my parcels, with vendor totals when the sender is a vendor. The
+ * sender's parcels from every park (one account works everywhere).
+ * Vendor totals: pay on delivery credited to them this month (ledger), and
+ * pay on delivery on parcels still on their way.
+ */
 export async function listMyParcels(
   userId: string,
   tab: "active" | "delivered" | "drafts",
 ): Promise<{ parcels: ParcelSummary[]; vendor: VendorTotals | null }> {
-  void userId;
-  void tab;
-  return stub(myParcels);
+  const [rows, vendor] = await Promise.all([
+    db.parcel.findMany({
+      where: { senderId: userId, status: { in: [...PARCEL_TABS[tab]] } },
+      include: summaryInclude,
+      orderBy:
+        tab === "delivered" ? { updatedAt: "desc" } : { createdAt: "desc" },
+      take: LIST_LIMIT,
+    }),
+    vendorTotals(userId),
+  ]);
+  return { parcels: rows.map(toParcelSummary), vendor };
+}
+
+/** How many parcels each S08 tab holds ("Active · 3"). */
+export async function myParcelCounts(
+  userId: string,
+): Promise<Record<"active" | "delivered" | "drafts", number>> {
+  const groups = await db.parcel.groupBy({
+    by: ["status"],
+    where: { senderId: userId },
+    _count: { _all: true },
+  });
+  const count = (statuses: readonly ParcelStatus[]) =>
+    groups
+      .filter((g) => statuses.includes(g.status))
+      .reduce((t, g) => t + g._count._all, 0);
+  return {
+    active: count(PARCEL_TABS.active),
+    delivered: count(PARCEL_TABS.delivered),
+    drafts: count(PARCEL_TABS.drafts),
+  };
+}
+
+/** Start of the current month in Lagos (UTC+1, no daylight saving). */
+function lagosMonthStart(now = new Date()): Date {
+  const lagos = new Date(now.getTime() + 60 * 60 * 1000);
+  return new Date(
+    Date.UTC(lagos.getUTCFullYear(), lagos.getUTCMonth(), 1) - 60 * 60 * 1000,
+  );
+}
+
+async function vendorTotals(userId: string): Promise<VendorTotals | null> {
+  const vendor = await db.vendorProfile.findUnique({
+    where: { userId },
+    select: { userId: true },
+  });
+  if (!vendor) return null;
+  const [credited, onTheWay] = await Promise.all([
+    db.ledgerEntry.aggregate({
+      where: {
+        account: "VENDOR",
+        accountRefId: userId,
+        createdAt: { gte: lagosMonthStart() },
+      },
+      _sum: { amountKobo: true },
+    }),
+    db.parcel.aggregate({
+      where: {
+        senderId: userId,
+        podAmountKobo: { gt: 0 },
+        status: { in: [...PARCEL_TABS.active] },
+      },
+      _sum: { podAmountKobo: true },
+    }),
+  ]);
+  return {
+    collectedThisMonthKobo: Math.max(0, credited._sum.amountKobo ?? 0),
+    awaitingCollectionKobo: onTheWay._sum.podAmountKobo ?? 0,
+  };
 }
 
 /** Route id → size → the sender's total, as quote() works it out. */
