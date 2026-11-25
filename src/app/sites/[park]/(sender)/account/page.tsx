@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import { Badge } from "@/components/ui/badge";
 import { MobileShell, TopBar } from "@/components/ui/shells";
-import { Card, KeyValue, Section } from "@/components/ui/surface";
 import {
+  Business,
   Preferences,
   ProfileCard,
   SavedRecipients,
@@ -17,6 +16,7 @@ import { formatPhone } from "@/lib/phone";
 import { getSession } from "@/server/auth";
 import { getPark, parkDisplayName } from "@/server/parks";
 import { listRecipients } from "@/server/recipients";
+import { bookingLimits } from "@/server/booking";
 import { getProfile } from "@/server/vendors";
 
 export const metadata: Metadata = { title: "Account" };
@@ -48,10 +48,11 @@ async function Account({ params }: { params: Promise<{ park: string }> }) {
   const [{ park: slug }, user] = await Promise.all([params, getSession()]);
   if (!user) redirect("/signin?next=/account");
 
-  const [profile, recipients, park] = await Promise.all([
+  const [profile, recipients, park, limits] = await Promise.all([
     getProfile(user.id),
     listRecipients(user.id),
     getPark(slug),
+    bookingLimits(),
   ]);
 
   // "Where they usually collect": the parks this park sends to, and the
@@ -102,27 +103,8 @@ async function Account({ params }: { params: Promise<{ park: string }> }) {
     >
       <ProfileCard profile={profile} />
 
-      {profile.vendor ? (
-        <Section
-          title="Business"
-          action={
-            <Badge tone="volt" dot={false}>
-              Vendor
-            </Badge>
-          }
-        >
-          <Card className="px-4 py-1">
-            <KeyValue label="Business" value={profile.vendor.businessName} />
-            <KeyValue
-              label="Payout account"
-              value={
-                profile.vendor.payoutAccountLast4
-                  ? `${profile.vendor.payoutBank ?? "Bank"} ···· ${profile.vendor.payoutAccountLast4}`
-                  : "Not added yet"
-              }
-            />
-          </Card>
-        </Section>
+      {profile.role === "SENDER" ? (
+        <Business vendor={profile.vendor} podFeeBps={limits.podFeeBps} />
       ) : null}
 
       <SavedRecipients recipients={rows} options={options} />

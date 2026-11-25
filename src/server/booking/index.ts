@@ -305,6 +305,8 @@ export async function parkEstimates(
 export async function bookingLimits(): Promise<{
   podLimitKobo: number;
   platformFeeKobo: number;
+  /** Platform fee on pay on delivery, in basis points (125 = 1.25%). */
+  podFeeBps: number;
 }> {
   "use cache";
   cacheLife("minutes");
@@ -312,6 +314,7 @@ export async function bookingLimits(): Promise<{
   return {
     podLimitKobo: settings?.podLimitKobo ?? 20_000_000,
     platformFeeKobo: settings?.platformFeeKobo ?? 15_000,
+    podFeeBps: settings?.podFeeBps ?? 125,
   };
 }
 
