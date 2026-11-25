@@ -1,9 +1,8 @@
 /**
  * Owned by Scope 04 (docs/scopes/04-payments-ledger.md). Exported names and
- * types are FINAL; callers never change. Being replaced slice by slice:
- * startPayment, handleCallback, requery, paymentStatus and
- * applyVerifiedPayment are real (sl2), handleWebhook (sl4); refund (sl9)
- * still returns fixture data. STUB stays true until every function is real.
+ * types are FINAL; callers never change. Every function is real (sl2–sl9):
+ * startPayment, handleCallback, requery, paymentStatus, applyVerifiedPayment,
+ * handleWebhook, recheckDuePayments, paymentReceipt and refund.
  *
  * The one rule: a payment counts only after OUR server asks Interswitch and
  * gets ResponseCode "00" with the exact kobo amount and our reference
@@ -16,7 +15,6 @@ import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { serverEnv } from "@/lib/env";
 import { txnRef as newTxnRef } from "@/lib/ids";
-import { stub } from "@/mocks/stub";
 import { holdPayment, shortParkName } from "@/server/ledger";
 import { notify } from "@/server/notify";
 import { siteUrl } from "@/server/notify/links";
@@ -28,6 +26,7 @@ import {
 } from "@/server/parcels";
 import { PaymentError } from "./errors";
 import { REPLACED_REASON, REVIEW_MESSAGE } from "./messages";
+import { refundParcel, refundPayment, resendRefund } from "./refunds";
 import { SIGNATURE_HEADER, parseWebhook, verifySignature } from "./webhook";
 import {
   checkoutForm,
@@ -47,7 +46,7 @@ import {
   nextCheckAt,
 } from "./rules";
 
-export const STUB = true;
+export const STUB = false;
 
 export { PaymentError } from "./errors";
 export type { Payer } from "./rules";
@@ -304,6 +303,8 @@ export type RecheckResult = {
   verified: number;
   failed: number;
   pending: number;
+  /** Refunds re-sent to Interswitch after a "try again later". */
+  refunds: number;
   errors: number;
 };
 
@@ -330,7 +331,7 @@ export async function recheckDuePayments(
     where: { nextRequeryAt: { lte: now } },
     orderBy: { nextRequeryAt: "asc" },
     take: limit,
-    select: { id: true, txnRef: true, nextRequeryAt: true },
+    select: { id: true, txnRef: true, nextRequeryAt: true, purpose: true },
   });
   const result: RecheckResult = {
     due: due.length,
@@ -338,6 +339,7 @@ export async function recheckDuePayments(
     verified: 0,
     failed: 0,
     pending: 0,
+    refunds: 0,
     errors: 0,
   };
   const queue = [...due];
@@ -349,6 +351,22 @@ export async function recheckDuePayments(
         data: { nextRequeryAt: lease },
       });
       if (count !== 1) continue; // another run took it
+      if (p.purpose === "REFUND") {
+        try {
+          await resendRefund(p.id);
+          result.refunds++;
+          // resendRefund set the next try (or none); drop our claim if not.
+          await db.payment.updateMany({
+            where: { id: p.id, nextRequeryAt: lease },
+            data: { nextRequeryAt: null },
+          });
+        } catch (e) {
+          // The claim runs out and a later run tries again.
+          result.errors++;
+          console.error(`[payments] refund re-send ${p.txnRef}`, e);
+        }
+        continue;
+      }
       try {
         const { view } = await checkPayment(p.txnRef, {
           reopenSettled: false,
@@ -389,6 +407,10 @@ async function checkPayment(
   const payment = await db.payment.findUnique({ where: { txnRef } });
   if (!payment) {
     throw new PaymentError("payment_not_found", "Payment not found.", 404);
+  }
+  // A refund isn't a checkout: nothing to ask the status API about.
+  if (payment.purpose === "REFUND") {
+    return { view: (await paymentStatus(txnRef))!, unreachable: false };
   }
   const settledFailure =
     payment.status === "FAILED" &&
@@ -653,7 +675,7 @@ export async function paymentReceipt(
       },
     },
   });
-  if (!payment) return null;
+  if (!payment || payment.purpose === "REFUND") return null;
   const raw = (payment.rawResponse ?? {}) as {
     needsRefund?: boolean;
     answer?: { paymentReference?: string | null };
@@ -876,15 +898,39 @@ async function flagRefund(paymentId: string, reason: string): Promise<void> {
       } as Prisma.InputJsonValue,
     },
   });
-  console.warn(`[payments] ${payment?.txnRef} needs a refund (sl9): ${reason}`);
+  console.warn(`[payments] ${payment?.txnRef} needs a refund: ${reason}`);
+  // Money we can't use goes straight back (sl9). A failure here leaves the
+  // flag for staff; it never undoes the payment.
+  await refundPayment(
+    paymentId,
+    REFUND_LABEL[reason] ?? "payment not used",
+  ).catch((e: unknown) =>
+    console.error(`[payments] refund ${payment?.txnRef}`, e),
+  );
 }
 
-/** Refund for expiry, cancellation or refusal (PAY-6). STUB until sl9. */
+/** Ledger wording (P03 "Refund · expired booking") for flagged payments. */
+const REFUND_LABEL: Record<string, string> = {
+  "Booking already paid by another checkout": "duplicate payment",
+  "Paid after the booking was cancelled": "cancelled booking",
+  "Paid after the booking closed": "closed booking",
+  "Booking total changed after this checkout started": "outdated checkout",
+  "Top-up already paid, or changed after this checkout started":
+    "duplicate top-up",
+  "Pay-on-delivery already paid by another checkout": "duplicate payment",
+  "Storage already paid by a later checkout": "duplicate payment",
+};
+
+/**
+ * Refund for expiry, cancellation or refusal (PAY-6): every payment of the
+ * parcel whose money is still held goes back to whoever paid, with
+ * reversing ledger entries, through Interswitch (./refunds.ts). `reason`
+ * is the ledger wording, e.g. "expired booking". Safe to call again.
+ */
 export async function refund(
   parcelId: string,
   reason: string,
 ): Promise<{ started: boolean }> {
-  void parcelId;
-  void reason;
-  return stub({ started: true });
+  const { started } = await refundParcel(parcelId, reason);
+  return { started };
 }
