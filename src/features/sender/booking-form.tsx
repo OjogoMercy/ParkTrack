@@ -7,6 +7,7 @@ import { BookingInput } from "@/contracts/api";
 import type { BySize, Quote } from "@/contracts/dto";
 import {
   ITEM_CATEGORIES,
+  PROHIBITED_ITEMS,
   SIZE_LABELS,
   type DeliveryMode,
   type ItemCategory,
@@ -31,6 +32,7 @@ import { BottomBar, MobileShell } from "@/components/ui/shells";
 import { Card, Notice } from "@/components/ui/surface";
 import { formatNaira } from "@/lib/money";
 import { normalizeNgPhone } from "@/lib/phone";
+import { prohibitedItemIn } from "@/server/parcels/pricing";
 
 export type BookingRoute = {
   id: string;
@@ -166,6 +168,9 @@ export function BookingForm({
       found["recipient.phone"] = "Enter their Nigerian phone number";
     }
     if (!category) found.category = "Choose what’s inside";
+    const banned = prohibitedItemIn(description);
+    if (banned)
+      found.description = `ParkTrack can’t carry this: ${banned.toLowerCase()}`;
 
     const input = {
       destinationParkId: route.destinationParkId,
@@ -407,12 +412,28 @@ export function BookingForm({
                         {c}
                       </option>
                     ))}
+                    {/* BOOK-8: listed so senders know, but never pickable. */}
+                    <optgroup label="Can’t be sent">
+                      {PROHIBITED_ITEMS.map((item) => (
+                        <option key={item} value={item} disabled>
+                          {item}
+                        </option>
+                      ))}
+                    </optgroup>
                   </Select>
                 )}
               </Field>
             </div>
             <div data-field="description">
-              <Field label="Short description" error={err("description")}>
+              <Field
+                label="Short description"
+                error={
+                  err("description") ??
+                  (prohibitedItemIn(description)
+                    ? `ParkTrack can’t carry this: ${prohibitedItemIn(description)!.toLowerCase()}`
+                    : undefined)
+                }
+              >
                 {(ids) => (
                   <Input
                     {...ids}

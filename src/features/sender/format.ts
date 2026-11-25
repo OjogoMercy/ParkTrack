@@ -85,6 +85,17 @@ export function parcelRowDetail(
   }
 }
 
+/** An unpaid booking past its 24 hours (the payment would be refused). */
+export function draftExpired(
+  p: { status: string; createdAt: string },
+  now: Date = new Date(),
+): boolean {
+  return (
+    p.status === "DRAFT" &&
+    new Date(p.createdAt).getTime() + DRAFT_HOURS * 3600_000 <= now.getTime()
+  );
+}
+
 /** Where an S08 row goes: pay it, show its QR, or follow it (Scope 07). */
 export function parcelRowHref(p: {
   parcelCode: string;

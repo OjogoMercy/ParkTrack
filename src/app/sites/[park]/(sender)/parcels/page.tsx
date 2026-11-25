@@ -4,7 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import type { ParcelSummary } from "@/contracts/dto";
-import { StatusBadge } from "@/components/ui/badge";
+import { Badge, StatusBadge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Code } from "@/components/ui/display";
 import { MobileShell } from "@/components/ui/shells";
@@ -13,7 +13,11 @@ import {
   ParkHeader,
   ParkHeaderSkeleton,
 } from "@/features/identity/park-header";
-import { parcelRowDetail, parcelRowHref } from "@/features/sender/format";
+import {
+  draftExpired,
+  parcelRowDetail,
+  parcelRowHref,
+} from "@/features/sender/format";
 import { SENDER_TABS } from "@/features/sender/tabs";
 import { formatDay, formatDayTime } from "@/lib/dates";
 import { formatNaira } from "@/lib/money";
@@ -185,7 +189,23 @@ function Rows({
                 {parcelRowDetail(p, fmt, now)}
               </>
             }
-            trailing={<StatusBadge status={p.status} />}
+            trailing={
+              p.status !== "DRAFT" ? (
+                <StatusBadge status={p.status} />
+              ) : draftExpired(p, now) ? (
+                <Badge dot={false}>Expired</Badge>
+              ) : (
+                // The whole row opens review and pay (S04).
+                <span
+                  className={cn(
+                    buttonVariants({ size: "sm" }),
+                    "pointer-events-none",
+                  )}
+                >
+                  Pay now
+                </span>
+              )
+            }
           />
         ))}
       </List>
