@@ -108,3 +108,19 @@ export function itemName(purpose: PayablePurpose, parcelCode: string): string {
   }[purpose];
   return `ParkTrack ${parcelCode} ${what}`;
 }
+
+/** Background re-checks stop this long after checkout (then staff review). */
+export const GIVE_UP_HOURS = 24;
+
+/**
+ * Next background re-check, backing off with the payment's age (not the
+ * number of checks: the status page asks too while the payer waits):
+ * every 5 min for Interswitch's 30 minutes, every 15 min to 2 hours, then
+ * hourly. Null once the payment is 24 hours old.
+ */
+export function nextCheckAt(startedAt: Date, now: Date): Date | null {
+  const age = now.getTime() - startedAt.getTime();
+  if (age >= GIVE_UP_HOURS * 60 * 60 * 1000) return null;
+  const step = age < 30 * 60_000 ? 5 : age < 120 * 60_000 ? 15 : 60;
+  return new Date(now.getTime() + step * 60_000);
+}

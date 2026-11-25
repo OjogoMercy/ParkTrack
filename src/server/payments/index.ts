@@ -40,6 +40,8 @@ import {
   payerProblem,
   type PayablePurpose,
   type Payer,
+  GIVE_UP_HOURS,
+  nextCheckAt,
 } from "./rules";
 
 export const STUB = true;
@@ -61,7 +63,7 @@ export type CheckoutStart = {
 const CHECKOUT_EMAIL = "noreply@parktrack.ng";
 /** First background re-check of a pending payment (sl5 runs them). */
 const FIRST_RECHECK_MINUTES = 10;
-/** Re-check interval while a payment is pending or retryable. */
+/** Re-check interval right after a payment changes (and for a replaced checkout). */
 const RECHECK_MINUTES = 5;
 
 const minutes = (n: number) => n * 60 * 1000;
@@ -293,6 +295,84 @@ export async function requery(txnRef: string): Promise<PaymentStatusView> {
   return (await checkPayment(txnRef, { reopenSettled: false })).view;
 }
 
+export type RecheckResult = {
+  due: number;
+  checked: number;
+  verified: number;
+  failed: number;
+  pending: number;
+  errors: number;
+};
+
+/** How long a job run holds a payment it is checking. */
+const LEASE_MINUTES = 2;
+
+/**
+ * Background re-check (POST /api/jobs/requery, QStash every few minutes;
+ * PRD §6.5): asks Interswitch about each payment whose re-check time has
+ * passed, so a payment whose redirect was closed still gets verified and
+ * applied. Also finishes applying a verified payment whose apply failed.
+ * Back-off and the 24-hour stop come from nextCheckAt(). Safe to run
+ * repeatedly and in parallel: each payment is claimed (its re-check time
+ * pushed forward) before Interswitch is asked.
+ */
+export async function recheckDuePayments(
+  now: Date = new Date(),
+  {
+    limit = 20,
+    concurrency = 4,
+  }: { limit?: number; concurrency?: number } = {},
+): Promise<RecheckResult> {
+  const due = await db.payment.findMany({
+    where: { nextRequeryAt: { lte: now } },
+    orderBy: { nextRequeryAt: "asc" },
+    take: limit,
+    select: { id: true, txnRef: true, nextRequeryAt: true },
+  });
+  const result: RecheckResult = {
+    due: due.length,
+    checked: 0,
+    verified: 0,
+    failed: 0,
+    pending: 0,
+    errors: 0,
+  };
+  const queue = [...due];
+  const worker = async () => {
+    for (let p = queue.shift(); p; p = queue.shift()) {
+      const lease = new Date(Date.now() + minutes(LEASE_MINUTES));
+      const { count } = await db.payment.updateMany({
+        where: { id: p.id, nextRequeryAt: p.nextRequeryAt },
+        data: { nextRequeryAt: lease },
+      });
+      if (count !== 1) continue; // another run took it
+      try {
+        const { view } = await checkPayment(p.txnRef, {
+          reopenSettled: false,
+        });
+        result.checked++;
+        if (view.status === "VERIFIED") result.verified++;
+        else if (view.status === "FAILED") result.failed++;
+        else result.pending++;
+        // Nothing rescheduled it (e.g. already settled): stop picking it up.
+        await db.payment.updateMany({
+          where: { id: p.id, nextRequeryAt: lease },
+          data: { nextRequeryAt: null },
+        });
+      } catch (e) {
+        // The lease runs out and a later run tries again.
+        result.errors++;
+        console.error(`[payments] re-check ${p.txnRef}`, e);
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, due.length) }, worker),
+  );
+  if (result.due) console.info("[payments] re-check", result);
+  return result;
+}
+
 /**
  * requery(), and for webhooks also a payment already settled as failed.
  * A settled failure only changes on a real answer (verified, or a 00 that
@@ -330,11 +410,23 @@ async function checkPayment(
       verdict.status === "VERIFIED" ||
       (verdict.status === "FAILED" && verdict.needsReview === true);
     if (!settledFailure || realAnswer) {
-      await recordVerdict(payment.id, verdict, answer, { replaced });
+      await recordVerdict(payment.id, verdict, answer, {
+        replaced,
+        startedAt: payment.createdAt,
+      });
     }
   }
   const latest = await db.payment.findUniqueOrThrow({ where: { txnRef } });
-  if (latest.status === "VERIFIED") await applyVerifiedPayment(latest.id);
+  if (latest.status === "VERIFIED") {
+    await applyVerifiedPayment(latest.id);
+    // Applied (or flagged for a refund): nothing left for the job to do.
+    if (latest.nextRequeryAt) {
+      await db.payment.update({
+        where: { id: latest.id },
+        data: { nextRequeryAt: null },
+      });
+    }
+  }
   return { view: (await paymentStatus(txnRef))!, unreachable };
 }
 
@@ -342,7 +434,7 @@ async function recordVerdict(
   paymentId: string,
   verdict: Verdict,
   answer: unknown,
-  { replaced }: { replaced: boolean },
+  { replaced, startedAt }: { replaced: boolean; startedAt: Date },
 ): Promise<void> {
   const now = new Date();
   const raw = {
@@ -364,7 +456,8 @@ async function recordVerdict(
         status: "VERIFIED",
         responseCode: "00",
         verifiedAt: now,
-        nextRequeryAt: null,
+        // Cleared once applied; if applying fails, the job tries again.
+        nextRequeryAt: new Date(now.getTime() + minutes(RECHECK_MINUTES)),
         rawResponse: raw as Prisma.InputJsonValue,
         requeryCount: { increment: 1 },
       },
@@ -374,34 +467,44 @@ async function recordVerdict(
   const keepChecking =
     verdict.status === "PENDING" ||
     (verdict.status === "FAILED" && !verdict.final);
-  const review = verdict.status === "FAILED" && verdict.needsReview === true;
+  const next = keepChecking ? nextCheckAt(startedAt, now) : null;
+  // Still unanswered a day later (Interswitch unreachable): stop checking.
+  const gaveUp = keepChecking && next === null;
+  const review =
+    (verdict.status === "FAILED" && verdict.needsReview === true) ||
+    (gaveUp && !replaced);
+  const detail = gaveUp
+    ? `Still unconfirmed ${GIVE_UP_HOURS} hours after checkout (last: ${verdict.reason ?? verdict.responseCode ?? "no answer"})`
+    : "reason" in verdict
+      ? verdict.reason
+      : null;
   if (review) {
-    // Money may have moved, but not what we charged (or not our reference):
-    // never applied; staff must check it (P07 payments monitor, Scope 09).
-    console.warn(`[payments] NEEDS REVIEW ${paymentId}: ${verdict.reason}`);
+    // Money may have moved, but not what we charged (or not our reference,
+    // or we never got an answer): never applied; staff must check it (P07
+    // payments monitor, Scope 09).
+    console.warn(`[payments] NEEDS REVIEW ${paymentId}: ${detail}`);
   }
   await db.payment.updateMany({
     where: { id: paymentId, status: { not: "VERIFIED" } },
     data: {
       // Never reopen a replaced checkout as pending.
-      status: replaced ? "FAILED" : verdict.status,
+      status: replaced || gaveUp ? "FAILED" : verdict.status,
       responseCode: verdict.responseCode,
-      nextRequeryAt: keepChecking
-        ? new Date(now.getTime() + minutes(RECHECK_MINUTES))
-        : null,
+      nextRequeryAt: next,
       rawResponse: {
         ...raw,
         // The payer sees a plain message; the detail stays on the server.
         ...(review
           ? {
               reason: REVIEW_MESSAGE,
-              detail: verdict.reason,
+              detail,
               needsReview: true,
             }
           : {}),
         // A replaced checkout settles once Interswitch's 30 minutes are up.
-        final:
-          verdict.status === "FAILED"
+        final: gaveUp
+          ? true
+          : verdict.status === "FAILED"
             ? verdict.final
             : replaced
               ? !keepChecking
