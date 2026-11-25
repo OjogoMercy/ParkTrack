@@ -1,8 +1,8 @@
 /**
  * Owned by Scope 05 (docs/scopes/05-sender-app.md). Exported names and
  * types are FINAL; callers never change. Being replaced slice by slice:
- * parkEstimates (sl1), bookingLimits (sl3), createBooking and draftForReview
- * (sl4) are real; listMyParcels (sl6) still returns fixture data. STUB stays
+ * parkEstimates (sl1), bookingLimits (sl3), createBooking, draftForReview
+ * (sl4) and bookedParcel (sl5) are real; listMyParcels (sl6) still returns fixture data. STUB stays
  * true until every function is real.
  */
 import { cacheLife, cacheTag } from "next/cache";
@@ -214,5 +214,70 @@ export async function bookingLimits(): Promise<{
   return {
     podLimitKobo: settings?.podLimitKobo ?? 20_000_000,
     platformFeeKobo: settings?.platformFeeKobo ?? 15_000,
+  };
+}
+
+export type BookedView = {
+  id: string;
+  parcelCode: string;
+  status: ParcelSummary["status"];
+  /** The only thing in the booking QR (bookingQr(publicId)). */
+  publicId: string;
+  originCity: string;
+  dropoffDeadline: Date | null;
+  recipientName: string;
+  destinationName: string;
+  deliveryMode: "PARK" | "ROADSIDE";
+  roadsidePointName: string | null;
+  sizeClass: SizeClass;
+  category: string;
+  podAmountKobo: number;
+  /** The verified shipping payment, when there is one. */
+  paid: { amountKobo: number; txnRef: string } | null;
+};
+
+/**
+ * S07 booked: a booking of this sender, made at this park, by its PT- code,
+ * with the shipping payment that paid it. Null when there is none.
+ */
+export async function bookedParcel(
+  senderId: string,
+  originParkSlug: string,
+  parcelCode: string,
+): Promise<BookedView | null> {
+  const p = await db.parcel.findFirst({
+    where: {
+      parcelCode: parcelCode.toUpperCase(),
+      senderId,
+      originPark: { slug: originParkSlug },
+    },
+    include: {
+      originPark: { select: { city: true } },
+      destinationPark: { select: { name: true } },
+      roadsidePoint: { select: { name: true } },
+      payments: {
+        where: { purpose: "SHIPPING", status: "VERIFIED" },
+        orderBy: { verifiedAt: "asc" },
+        take: 1,
+        select: { amountKobo: true, txnRef: true },
+      },
+    },
+  });
+  if (!p) return null;
+  return {
+    id: p.id,
+    parcelCode: p.parcelCode,
+    status: p.status,
+    publicId: p.publicId,
+    originCity: p.originPark.city,
+    dropoffDeadline: p.dropoffDeadline,
+    recipientName: p.recipientName,
+    destinationName: p.destinationPark.name,
+    deliveryMode: p.deliveryMode,
+    roadsidePointName: p.roadsidePoint?.name ?? null,
+    sizeClass: p.sizeClass,
+    category: p.category,
+    podAmountKobo: p.podAmountKobo,
+    paid: p.payments[0] ?? null,
   };
 }
