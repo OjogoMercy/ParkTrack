@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { MobileShell, TopBar } from "@/components/ui/shells";
+import { Notice } from "@/components/ui/surface";
+import { formatPhone } from "@/lib/phone";
 import { ParkTrackLogo } from "@/features/identity/logo";
+import { SignOutButton } from "@/features/identity/sign-out-button";
 import {
   consoleHome,
   consolePublicPath,
@@ -53,6 +56,20 @@ async function ConsoleSignIn({
       next={next}
       staff
       footnote="Sending a parcel? Sign in on your park’s page instead."
+      banner={
+        user ? (
+          // Signed in, but not as staff (a sender account).
+          <Notice tone="amber" className="mt-1 items-center">
+            <div className="flex items-center justify-between gap-3">
+              <span>
+                You’re signed in as {formatPhone(user.phone)}, which isn’t a
+                staff account. Park admins add staff.
+              </span>
+              <SignOutButton />
+            </div>
+          </Notice>
+        ) : null
+      }
     />
   );
 }

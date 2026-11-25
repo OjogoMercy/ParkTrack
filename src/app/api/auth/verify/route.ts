@@ -1,6 +1,6 @@
 import { AuthVerify } from "@/contracts/api";
 import {
-  AuthError,
+  errorResponse,
   invalidInputResponse,
   verifyOtp,
   verifyStaffOtp,
@@ -43,7 +43,6 @@ export async function POST(request: Request): Promise<Response> {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
-    if (error instanceof AuthError) return error.toResponse();
-    throw error;
+    return errorResponse(error);
   }
 }

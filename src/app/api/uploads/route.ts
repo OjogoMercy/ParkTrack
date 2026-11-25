@@ -1,7 +1,7 @@
 import { CreateUpload } from "@/contracts/api";
 import { db } from "@/lib/db";
 import {
-  AuthError,
+  errorResponse,
   invalidInputResponse,
   requireParkStaff,
   requireRole,
@@ -47,9 +47,6 @@ export async function POST(request: Request): Promise<Response> {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
-    if (error instanceof AuthError || error instanceof ParcelError) {
-      return error.toResponse();
-    }
-    throw error;
+    return errorResponse(error);
   }
 }
