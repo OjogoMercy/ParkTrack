@@ -91,15 +91,8 @@ describe("service stubs", () => {
     // src/server/ledger/*.test.ts.
     expect(ledger.STUB).toBe(false);
 
-    valid(
-      A.CreateParcel.response,
-      await booking.createBooking({} as A.BookingInput, {
-        originParkId: "o",
-        senderId: "s",
-        createdBy: "SENDER",
-        createdByUserId: "s",
-      }),
-    );
+    // booking.createBooking is real since Scope 05 sl4 (needs a database);
+    // listMyParcels stays a stub until sl6.
     valid(A.ListMyParcels.response, await booking.listMyParcels("u", "active"));
     // recipients and vendors are real since Scope 05 sl2 (need a database).
     expect(recipients.STUB).toBe(false);
