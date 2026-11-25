@@ -1,13 +1,15 @@
 /**
  * Owned by Scope 05 (docs/scopes/05-sender-app.md). Exported names and
  * types are FINAL; callers never change. Being replaced slice by slice:
- * parkEstimates is real (sl1); createBooking (sl4) and listMyParcels (sl6)
+ * parkEstimates (sl1) and bookingLimits (sl3) are real; createBooking (sl4)
+ * and listMyParcels (sl6)
  * still return fixture data. STUB stays true until every function is real.
  */
 import { cacheLife, cacheTag } from "next/cache";
 import type { BookingInput } from "@/contracts/api";
 import type { ParcelSummary, Quote, VendorTotals } from "@/contracts/dto";
 import { SIZE_CLASSES, type SizeClass } from "@/contracts/enums";
+import { db } from "@/lib/db";
 import { myParcels, parcelAwaiting, quoteMedium } from "@/mocks/fixtures";
 import { stub } from "@/mocks/stub";
 import { quote } from "@/server/parcels";
@@ -71,4 +73,21 @@ export async function parkEstimates(
     out[routeId] = bySize;
   }
   return out;
+}
+
+/**
+ * Limits S03 checks before submitting (the server checks them again):
+ * the pay-on-delivery cap and the service fee, from settings.
+ */
+export async function bookingLimits(): Promise<{
+  podLimitKobo: number;
+  platformFeeKobo: number;
+}> {
+  "use cache";
+  cacheLife("minutes");
+  const settings = await db.settings.findUnique({ where: { id: 1 } });
+  return {
+    podLimitKobo: settings?.podLimitKobo ?? 20_000_000,
+    platformFeeKobo: settings?.platformFeeKobo ?? 15_000,
+  };
 }
