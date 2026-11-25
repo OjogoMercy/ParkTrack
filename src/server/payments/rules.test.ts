@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   itemName,
+  nextCheckAt,
   payableAmount,
   payerProblem,
   type ParcelForPayment,
@@ -141,4 +142,22 @@ describe("who may pay", () => {
 
 it("names the item on the Interswitch page", () => {
   expect(itemName("SHIPPING", "PT-7K3Q")).toBe("ParkTrack PT-7K3Q shipping");
+});
+
+describe("background re-check back-off (by age)", () => {
+  const start = new Date("2026-11-25T10:00:00Z");
+  const after = (min: number) => new Date(start.getTime() + min * 60_000);
+  const gap = (min: number) => {
+    const next = nextCheckAt(start, after(min));
+    return next ? (next.getTime() - after(min).getTime()) / 60_000 : null;
+  };
+  it("every 5 min for 30 min, 15 to 2 h, then hourly, stops at 24 h", () => {
+    expect(gap(10)).toBe(5);
+    expect(gap(29)).toBe(5);
+    expect(gap(30)).toBe(15);
+    expect(gap(119)).toBe(15);
+    expect(gap(120)).toBe(60);
+    expect(gap(23 * 60)).toBe(60);
+    expect(gap(24 * 60)).toBeNull();
+  });
 });
