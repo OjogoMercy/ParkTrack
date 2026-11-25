@@ -88,8 +88,9 @@ describe("service stubs", () => {
     // Scope 04 sl2, handleWebhook since sl4 (need a database and
     // Interswitch); see src/server/payments/*.test.ts. refund stays a stub.
     expect((await payments.refund("p", "expired")).started).toBe(true);
-    valid(D.LedgerView, await ledger.ledger({ account: "PARK" }));
-    valid(D.EarningsView, await ledger.driverEarnings("d", "week"));
+    // ledger is real since Scope 04 sl7 (needs a database); see
+    // src/server/ledger/*.test.ts.
+    expect(ledger.STUB).toBe(false);
 
     valid(
       A.CreateParcel.response,
