@@ -5,7 +5,9 @@ export type PaymentErrorCode =
   | "payment_not_found"
   | "payment_not_allowed"
   | "payer_not_allowed"
-  | "payments_unavailable";
+  | "payments_unavailable"
+  | "bad_signature"
+  | "bad_webhook";
 
 /** A refused payment step, with a message for the person paying. */
 export class PaymentError extends Error {

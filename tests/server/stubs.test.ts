@@ -85,11 +85,9 @@ describe("service stubs", () => {
     expect(uploads.STUB).toBe(false);
 
     // payments.startPayment / requery / applyVerifiedPayment are real since
-    // Scope 04 sl2 (need a database and Interswitch); see
-    // src/server/payments/*.test.ts. handleWebhook / refund stay stubs.
-    expect((await payments.handleWebhook("{}", new Headers())).processed).toBe(
-      true,
-    );
+    // Scope 04 sl2, handleWebhook since sl4 (need a database and
+    // Interswitch); see src/server/payments/*.test.ts. refund stays a stub.
+    expect((await payments.refund("p", "expired")).started).toBe(true);
     valid(D.LedgerView, await ledger.ledger({ account: "PARK" }));
     valid(D.EarningsView, await ledger.driverEarnings("d", "week"));
 

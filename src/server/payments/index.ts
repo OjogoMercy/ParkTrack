@@ -2,8 +2,8 @@
  * Owned by Scope 04 (docs/scopes/04-payments-ledger.md). Exported names and
  * types are FINAL; callers never change. Being replaced slice by slice:
  * startPayment, handleCallback, requery, paymentStatus and
- * applyVerifiedPayment are real (sl2); handleWebhook (sl4) and refund (sl9)
- * still return fixture data. STUB stays true until every function is real.
+ * applyVerifiedPayment are real (sl2), handleWebhook (sl4); refund (sl9)
+ * still returns fixture data. STUB stays true until every function is real.
  *
  * The one rule: a payment counts only after OUR server asks Interswitch and
  * gets ResponseCode "00" with the exact kobo amount and our reference
@@ -25,6 +25,7 @@ import {
   transition,
 } from "@/server/parcels";
 import { PaymentError } from "./errors";
+import { SIGNATURE_HEADER, parseWebhook, verifySignature } from "./webhook";
 import {
   checkoutForm,
   CHECKOUT_TTL_MINUTES,
@@ -195,14 +196,91 @@ export async function handleCallback(
   return { txnRef: view.txnRef, status: view.status };
 }
 
-/** Idempotent webhook processing (PAY-3). STUB until sl4. */
+/**
+ * Interswitch webhook (PAY-3). Checks the X-Interswitch-Signature
+ * (HMAC-SHA512 of the raw body), stores the event once in webhook_events
+ * (a replay of a processed event returns duplicate: true and does nothing),
+ * then asks Interswitch about the payment itself: the webhook's own
+ * responseCode and amount are never trusted. Events for references that
+ * aren't ours are stored and ignored. Throws PaymentError: bad_signature
+ * 401, bad_webhook 400, payments_unavailable 503 (no ISW_WEBHOOK_SECRET).
+ * Any other error leaves the event unprocessed so Interswitch's retry (or
+ * the next one) picks it up.
+ */
 export async function handleWebhook(
   rawBody: string,
   headers: Headers,
 ): Promise<{ processed: boolean; duplicate: boolean }> {
-  void rawBody;
-  void headers;
-  return stub({ processed: true, duplicate: false });
+  const secret = serverEnv().ISW_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error(
+      "[payments] webhook received but ISW_WEBHOOK_SECRET is not set",
+    );
+    throw new PaymentError(
+      "payments_unavailable",
+      "Webhooks aren't set up.",
+      503,
+    );
+  }
+  if (!verifySignature(rawBody, headers.get(SIGNATURE_HEADER), secret)) {
+    throw new PaymentError("bad_signature", "Signature doesn't match.", 401);
+  }
+  const event = parseWebhook(rawBody);
+  if (!event) {
+    throw new PaymentError("bad_webhook", "Not an Interswitch event.", 400);
+  }
+
+  // Store once (unique provider_ref).
+  let stored;
+  try {
+    stored = await db.webhookEvent.create({
+      data: {
+        providerRef: event.providerRef,
+        payload: JSON.parse(rawBody) as Prisma.InputJsonValue,
+      },
+    });
+  } catch (e) {
+    if ((e as { code?: unknown }).code !== "P2002") throw e;
+    stored = await db.webhookEvent.findUniqueOrThrow({
+      where: { providerRef: event.providerRef },
+    });
+    if (stored.processedAt) {
+      console.info(`[payments] webhook duplicate ignored ${event.providerRef}`);
+      return { processed: true, duplicate: true };
+    }
+    // Stored before but not processed (an earlier attempt failed): retry.
+  }
+
+  if (event.event.startsWith("TRANSACTION.") && event.txnRef) {
+    const payment = await db.payment.findUnique({
+      where: { txnRef: event.txnRef },
+      select: { id: true },
+    });
+    if (payment) {
+      // Late results arrive here: re-ask even about a payment we had
+      // settled as failed, so money that did move is caught.
+      const { unreachable } = await checkPayment(event.txnRef, {
+        reopenSettled: true,
+      });
+      if (unreachable) {
+        // Leave the event unprocessed; a non-200 makes Interswitch retry.
+        throw new PaymentError(
+          "payments_unavailable",
+          "Couldn't reach Interswitch to check this payment.",
+          503,
+        );
+      }
+    } else {
+      console.info(
+        `[payments] webhook for an unknown reference ${event.txnRef}`,
+      );
+    }
+  }
+  await db.webhookEvent.update({
+    where: { id: stored.id },
+    data: { processedAt: new Date() },
+  });
+  return { processed: true, duplicate: false };
 }
 
 /**
@@ -212,6 +290,19 @@ export async function handleWebhook(
  * payment_not_found (404).
  */
 export async function requery(txnRef: string): Promise<PaymentStatusView> {
+  return (await checkPayment(txnRef, { reopenSettled: false })).view;
+}
+
+/**
+ * requery(), and for webhooks also a payment already settled as failed.
+ * A settled failure only changes on a real answer (verified, or a 00 that
+ * needs review), never back to pending on a timeout.
+ */
+async function checkPayment(
+  txnRef: string,
+  { reopenSettled }: { reopenSettled: boolean },
+): Promise<{ view: PaymentStatusView; unreachable: boolean }> {
+  let unreachable = false;
   const payment = await db.payment.findUnique({ where: { txnRef } });
   if (!payment) {
     throw new PaymentError("payment_not_found", "Payment not found.", 404);
@@ -219,13 +310,14 @@ export async function requery(txnRef: string): Promise<PaymentStatusView> {
   const settledFailure =
     payment.status === "FAILED" &&
     (payment.rawResponse as { final?: boolean } | null)?.final === true;
-  if (payment.status !== "VERIFIED" && !settledFailure) {
+  if (payment.status !== "VERIFIED" && (!settledFailure || reopenSettled)) {
     const config = iswConfig(serverEnv());
     let answer;
     try {
       answer = await requeryTransaction(config, txnRef, payment.amountKobo);
     } catch (e) {
       answer = { error: e instanceof Error ? e.message : String(e) };
+      unreachable = true;
     }
     const verdict = classifyRequery(answer, {
       txnRef,
@@ -234,11 +326,16 @@ export async function requery(txnRef: string): Promise<PaymentStatusView> {
     });
     const replaced =
       (payment.rawResponse as { replaced?: boolean } | null)?.replaced === true;
-    await recordVerdict(payment.id, verdict, answer, { replaced });
+    const realAnswer =
+      verdict.status === "VERIFIED" ||
+      (verdict.status === "FAILED" && verdict.needsReview === true);
+    if (!settledFailure || realAnswer) {
+      await recordVerdict(payment.id, verdict, answer, { replaced });
+    }
   }
   const latest = await db.payment.findUniqueOrThrow({ where: { txnRef } });
   if (latest.status === "VERIFIED") await applyVerifiedPayment(latest.id);
-  return (await paymentStatus(txnRef))!;
+  return { view: (await paymentStatus(txnRef))!, unreachable };
 }
 
 async function recordVerdict(
