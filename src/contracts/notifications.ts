@@ -52,6 +52,9 @@ export const NOTIFICATION_AUDIENCE: Record<
   collection_started: ["recipient"],
   collected: ["sender", "recipient", "driver"],
   missing_at_tickoff: ["sender", "recipient", "park_admin", "driver"],
-  payment_receipt: ["sender"],
+  // Whoever paid: the sender (shipping, top-up) or the recipient (pay on
+  // delivery, storage). notify extra.payer picks; the vendor also hears
+  // about POD money (PAY-8).
+  payment_receipt: ["sender", "recipient"],
   otp: [],
 };
