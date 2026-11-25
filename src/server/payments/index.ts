@@ -17,6 +17,7 @@ import { db } from "@/lib/db";
 import { serverEnv } from "@/lib/env";
 import { txnRef as newTxnRef } from "@/lib/ids";
 import { stub } from "@/mocks/stub";
+import { holdPayment } from "@/server/ledger";
 import { siteUrl } from "@/server/notify/links";
 import {
   issueCollectionCode,
@@ -450,18 +451,23 @@ async function recordVerdict(
     ...(replaced ? { replaced: true } : {}),
   };
   if (verdict.status === "VERIFIED") {
-    // Claim: only a payment that isn't verified yet becomes verified.
-    await db.payment.updateMany({
-      where: { id: paymentId, status: { not: "VERIFIED" } },
-      data: {
-        status: "VERIFIED",
-        responseCode: "00",
-        verifiedAt: now,
-        // Cleared once applied; if applying fails, the job tries again.
-        nextRequeryAt: new Date(now.getTime() + minutes(RECHECK_MINUTES)),
-        rawResponse: raw as Prisma.InputJsonValue,
-        requeryCount: { increment: 1 },
-      },
+    await db.$transaction(async (tx) => {
+      // Claim: only a payment that isn't verified yet becomes verified.
+      const { count } = await tx.payment.updateMany({
+        where: { id: paymentId, status: { not: "VERIFIED" } },
+        data: {
+          status: "VERIFIED",
+          responseCode: "00",
+          verifiedAt: now,
+          // Cleared once applied; if applying fails, the job tries again.
+          nextRequeryAt: new Date(now.getTime() + minutes(RECHECK_MINUTES)),
+          rawResponse: raw as Prisma.InputJsonValue,
+          requeryCount: { increment: 1 },
+        },
+      });
+      // The money is held until the parcel settles (once per payment,
+      // because only the claim that won gets here).
+      if (count === 1) await holdPayment(tx, paymentId);
     });
     return;
   }
