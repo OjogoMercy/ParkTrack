@@ -119,6 +119,7 @@ describe("status check request", () => {
         Amount: 265000,
         MerchantReference: "ISW-PT-8F3KQ2XA",
         PaymentReference: "UBA|API|MX6072|25-07-2024|249510|719456",
+        PaymentId: 475054882,
         TransactionDate: "2026-11-24T10:57:24",
         ResponseCode: "00",
         ResponseDescription: "Approved by Financial Institution",
@@ -141,6 +142,7 @@ describe("status check request", () => {
       responseCode: "00",
       amountKobo: 265_000,
       merchantReference: "ISW-PT-8F3KQ2XA",
+      paymentId: "475054882",
       cancelled: false,
     });
   });
@@ -174,6 +176,7 @@ describe("verdict: only 00 + exact amount + our reference is paid", () => {
     amountKobo: 265_000,
     merchantReference: "ISW-PT-8F3KQ2XA",
     paymentReference: "REF",
+    paymentId: null,
     transactionDate: null,
     cancelled: false,
     ...over,

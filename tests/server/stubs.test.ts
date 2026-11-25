@@ -84,10 +84,9 @@ describe("service stubs", () => {
     // src/server/uploads/*.test.ts.
     expect(uploads.STUB).toBe(false);
 
-    // payments.startPayment / requery / applyVerifiedPayment are real since
-    // Scope 04 sl2, handleWebhook since sl4 (need a database and
-    // Interswitch); see src/server/payments/*.test.ts. refund stays a stub.
-    expect((await payments.refund("p", "expired")).started).toBe(true);
+    // payments is real since Scope 04 (sl2–sl9; needs a database and
+    // Interswitch); see src/server/payments/*.test.ts.
+    expect(payments.STUB).toBe(false);
     // ledger is real since Scope 04 sl7 (needs a database); see
     // src/server/ledger/*.test.ts.
     expect(ledger.STUB).toBe(false);

@@ -66,9 +66,6 @@ const eta = (c: MessageContext) =>
     : "We'll tell you when it's close";
 
 const link = (url: string | null) => (url ? ` ${url}` : "");
-/** The receipt page when the payment gave one (PAY-8), else the parcel. */
-const receiptLink = (c: MessageContext) =>
-  typeof c.extra.receiptUrl === "string" ? c.extra.receiptUrl : c.links.sender;
 
 const TEMPLATES: Partial<Record<`${NotificationEvent}.${Audience}`, Template>> =
   {
@@ -144,7 +141,7 @@ const TEMPLATES: Partial<Record<`${NotificationEvent}.${Audience}`, Template>> =
       `ParkTrack: ${c.parcelCode} was missing at tick-off at ${c.destinationPark.name}. A dispute is open; please speak to the park.${link(c.links.driver)}`,
 
     "payment_receipt.sender": (c) =>
-      `ParkTrack: payment of ${formatNaira(Number(c.extra.amountKobo ?? c.totalKobo))} received for ${c.parcelCode}${c.extra.txnRef ? ` (ref ${c.extra.txnRef})` : ""}.${link(receiptLink(c))}`,
+      `ParkTrack: payment of ${formatNaira(Number(c.extra.amountKobo ?? c.totalKobo))} received for ${c.parcelCode}${c.extra.txnRef ? ` (ref ${c.extra.txnRef})` : ""}.${link(c.links.sender)}`,
   };
 
 // ─── Nigerian Pidgin (NOT-2, P1) ────────────────────────────────────────────
@@ -232,7 +229,7 @@ const PCM_TEMPLATES: Partial<
     `ParkTrack: ${c.parcelCode} no dey when dem tick your load for ${c.destinationPark.name}. Dispute don open; abeg talk to the park.${link(c.links.driver)}`,
 
   "payment_receipt.sender": (c) =>
-    `ParkTrack: we don receive ${formatNaira(Number(c.extra.amountKobo ?? c.totalKobo))} for ${c.parcelCode}${c.extra.txnRef ? ` (ref ${c.extra.txnRef})` : ""}.${link(receiptLink(c))}`,
+    `ParkTrack: we don receive ${formatNaira(Number(c.extra.amountKobo ?? c.totalKobo))} for ${c.parcelCode}${c.extra.txnRef ? ` (ref ${c.extra.txnRef})` : ""}.${link(c.links.sender)}`,
 };
 
 /** Message language: the profile's Language enum. */

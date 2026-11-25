@@ -140,6 +140,8 @@ export type IswTransaction = {
   amountKobo: number;
   merchantReference: string | null;
   paymentReference: string | null;
+  /** Interswitch's numeric payment id (what refunds point at). */
+  paymentId: string | null;
   transactionDate: string | null;
   cancelled: boolean;
 };
@@ -185,6 +187,10 @@ export async function requeryTransaction(
         : null,
     paymentReference:
       typeof body.PaymentReference === "string" ? body.PaymentReference : null,
+    paymentId:
+      typeof body.PaymentId === "number" || typeof body.PaymentId === "string"
+        ? String(body.PaymentId)
+        : null,
     transactionDate:
       typeof body.TransactionDate === "string" ? body.TransactionDate : null,
     cancelled: body.PaymentCancelled === true,
