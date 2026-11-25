@@ -176,7 +176,17 @@ function Refunding({ view }: { view: PaymentStatusView }) {
       title="We’ll refund this payment"
       sub="We received this payment but couldn’t use it, so it will be refunded to you. You don’t need to do anything."
       reason={view.reason ?? undefined}
-      actions={<BackLink view={view} />}
+      actions={
+        <>
+          <BackLink view={view} />
+          <a
+            href={`/pay/${encodeURIComponent(view.txnRef)}/receipt`}
+            className="text-center text-sub font-medium underline"
+          >
+            View receipt
+          </a>
+        </>
+      }
     />
   );
 }

@@ -236,3 +236,28 @@ describe("Pidgin (PCM)", () => {
     );
   });
 });
+
+describe("payment receipt (PAY-8)", () => {
+  it("links the receipt page when the payment gives one, in both languages", () => {
+    const extra = {
+      amountKobo: 2_500_000,
+      txnRef: "ISW-PT-3QW81M",
+      receiptUrl: "https://parktrack.ng/pay/ISW-PT-3QW81M/receipt",
+    };
+    for (const lang of ["EN", "PCM"] as const) {
+      const text = renderMessage(
+        "payment_receipt",
+        "sender",
+        context({ extra }),
+        lang,
+      )!;
+      expect(text).toContain("₦25,000");
+      expect(text).toContain("ISW-PT-3QW81M");
+      expect(text).toContain("https://parktrack.ng/pay/ISW-PT-3QW81M/receipt");
+    }
+    // Without one it still links the parcel.
+    expect(
+      renderMessage("payment_receipt", "sender", context({ extra: {} })),
+    ).toContain("parktrack.ng");
+  });
+});
