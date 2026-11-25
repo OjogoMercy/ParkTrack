@@ -213,6 +213,11 @@ export type Verdict =
        * live in the sandbox), so keep re-checking. true: settled for good.
        */
       final: boolean;
+      /**
+       * Interswitch says it was paid, but not what we charged or not our
+       * reference: never applied, a person must look (sl3).
+       */
+      needsReview?: boolean;
     };
 
 /**
@@ -238,6 +243,7 @@ export function classifyRequery(
         responseCode: code,
         reason: `Amount mismatch: paid ${result.amountKobo} kobo, expected ${expected.amountKobo}`,
         final: true, // money moved but not what we charged: a person must look
+        needsReview: true,
       };
     }
     if (
@@ -249,6 +255,7 @@ export function classifyRequery(
         responseCode: code,
         reason: "Reference mismatch",
         final: true,
+        needsReview: true,
       };
     }
     return {

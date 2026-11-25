@@ -194,6 +194,7 @@ describe("verdict: only 00 + exact amount + our reference is paid", () => {
       status: "FAILED",
       reason: expect.stringMatching(/Amount mismatch/),
       final: true,
+      needsReview: true,
     });
     expect(
       classifyRequery(
@@ -205,6 +206,7 @@ describe("verdict: only 00 + exact amount + our reference is paid", () => {
       status: "FAILED",
       reason: "Reference mismatch",
       final: true,
+      needsReview: true,
     });
   });
 
@@ -226,6 +228,11 @@ describe("verdict: only 00 + exact amount + our reference is paid", () => {
       status: "FAILED",
       final: true,
     });
+    // An ordinary decline is not a review case.
+    expect(
+      (classifyRequery(declined, expected, at(2)) as { needsReview?: boolean })
+        .needsReview,
+    ).toBeUndefined();
   });
 
   it("not found / in progress is pending for 30 minutes, then failed", () => {
