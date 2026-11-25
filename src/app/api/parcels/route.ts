@@ -1,4 +1,4 @@
-import { CreateParcel } from "@/contracts/api";
+import { CreateParcel, ListMyParcels } from "@/contracts/api";
 import type { ApiError } from "@/contracts/primitives";
 import {
   AuthError,
@@ -7,7 +7,7 @@ import {
   invalidInputResponse,
   requireRole,
 } from "@/server/auth";
-import { createBooking } from "@/server/booking";
+import { createBooking, listMyParcels } from "@/server/booking";
 import { getPark } from "@/server/parks";
 import { resolveHost } from "@/server/parks/host";
 
@@ -60,6 +60,27 @@ export async function POST(request: Request): Promise<Response> {
     });
   } catch (error) {
     if (error instanceof AuthError) return error.toResponse();
+    return errorResponse(error);
+  }
+}
+
+/**
+ * GET /api/parcels?tab=active|delivered|drafts — the sender's parcels
+ * (S08), newest first, with vendor totals for vendors. 400 invalid_input,
+ * 401 signed_out.
+ */
+export async function GET(request: Request): Promise<Response> {
+  try {
+    const user = await requireRole();
+    const query = ListMyParcels.query.safeParse(
+      Object.fromEntries(new URL(request.url).searchParams.entries()),
+    );
+    if (!query.success) return invalidInputResponse(query.error);
+    const result = await listMyParcels(user.id, query.data.tab);
+    return Response.json(ListMyParcels.response.parse(result), {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch (error) {
     return errorResponse(error);
   }
 }
