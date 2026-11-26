@@ -37,6 +37,10 @@ export const prismaOtpStore: OtpStore = {
     return rows.map((r) => r.createdAt);
   },
 
+  async discard(id) {
+    await db.otpCode.deleteMany({ where: { id } });
+  },
+
   async consume(id, now) {
     const { count } = await db.otpCode.updateMany({
       where: { id, consumedAt: null },

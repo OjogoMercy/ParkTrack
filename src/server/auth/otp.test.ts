@@ -42,6 +42,10 @@ function memoryStore(): OtpStore & { rows: OtpRow[] } {
       r.attempts += 1;
       return true;
     },
+    async discard(id) {
+      const i = rows.findIndex((x) => x.id === id);
+      if (i >= 0) rows.splice(i, 1);
+    },
     async consume(id, now) {
       const r = rows.find((x) => x.id === id);
       if (!r || r.consumedAt) return false;
@@ -206,5 +210,35 @@ describe("checkOtp", () => {
       now: at(10),
     });
     expect(await codeOf(other)).toBe("otp_wrong");
+  });
+});
+
+describe("a code that couldn't be delivered", () => {
+  it("is refused, discarded, and doesn't count towards the hourly limit", async () => {
+    const store = memoryStore();
+    for (let i = 0; i < 6; i++) {
+      await expect(
+        issueOtp({
+          phone: PHONE,
+          channel: "WHATSAPP",
+          store,
+          secret: SECRET,
+          deliver: async () => false, // WhatsApp and SMS both failed
+          now: T0,
+        }),
+      ).rejects.toMatchObject({ code: "otp_send_failed", status: 503 });
+    }
+    expect(store.rows).toHaveLength(0);
+    // Once sending works again, a code is issued straight away.
+    await expect(
+      issueOtp({
+        phone: PHONE,
+        channel: "WHATSAPP",
+        store,
+        secret: SECRET,
+        deliver: async () => {},
+        now: T0,
+      }),
+    ).resolves.toMatchObject({ channel: "WHATSAPP" });
   });
 });

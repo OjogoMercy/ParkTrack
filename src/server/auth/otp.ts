@@ -53,6 +53,8 @@ export interface OtpStore {
   consume(id: string, now: Date): Promise<boolean>;
   /** When codes were issued for this phone since `since`, oldest first. */
   issuedSince(phone: string, since: Date): Promise<Date[]>;
+  /** Removes a code that was never delivered (it mustn't count or work). */
+  discard(id: string): Promise<void>;
 }
 
 export type IssueOtpInput = {
@@ -60,12 +62,15 @@ export type IssueOtpInput = {
   channel: OtpChannel;
   store: OtpStore;
   secret: string;
-  /** Sends the code; may return the channel that actually delivered it. */
+  /**
+   * Sends the code; may return the channel that actually delivered it, or
+   * false when nothing was delivered (WhatsApp and SMS both failed).
+   */
   deliver: (
     phone: string,
     code: string,
     channel: OtpChannel,
-  ) => Promise<OtpChannel | void>;
+  ) => Promise<OtpChannel | false | void>;
   now?: Date;
 };
 
@@ -114,7 +119,7 @@ export async function issueOtp({
   }
 
   const code = sixDigitCode();
-  await store.create({
+  const row = await store.create({
     phone,
     codeHash: hashCode(code, phone, secret),
     channel,
@@ -122,6 +127,16 @@ export async function issueOtp({
   });
   // The channel that actually delivered it (SMS if WhatsApp fell back).
   const delivered = await deliver(phone, code, channel);
+  if (delivered === false) {
+    // Nothing reached the phone: don't make them wait for it, and don't let
+    // it count towards the 5 codes an hour.
+    await store.discard(row.id);
+    throw new AuthError(
+      "otp_send_failed",
+      "We couldn’t send your code just now. Try again in a minute, or ask for it by SMS.",
+      503,
+    );
+  }
   return { channel: delivered ?? channel, resendInSeconds: OTP_RESEND_SECONDS };
 }
 

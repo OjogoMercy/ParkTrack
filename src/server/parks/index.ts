@@ -57,7 +57,9 @@ async function loadParkRecord(slug: string): Promise<ParkRecord | null> {
     where: { slug, status: "LIVE" },
     include: {
       routesFrom: {
-        where: { active: true },
+        // A route into a paused or onboarding park can't be booked (quote()
+        // refuses it), so it isn't listed.
+        where: { active: true, destinationPark: { status: "LIVE" } },
         include: {
           destinationPark: true,
           roadsidePoints: { orderBy: { order: "asc" } },

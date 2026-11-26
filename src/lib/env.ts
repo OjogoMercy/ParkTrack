@@ -17,47 +17,59 @@ import { z } from "zod";
 const secret = z.string().min(32, "must be at least 32 characters");
 const optional = z.string().min(1).optional();
 
-const ServerEnv = z.object({
-  NODE_ENV: z
-    .enum(["development", "test", "production"])
-    .default("development"),
-  ROOT_DOMAIN: z.string().min(1).default("localhost:3000"),
+const ServerEnv = z
+  .object({
+    NODE_ENV: z
+      .enum(["development", "test", "production"])
+      .default("development"),
+    ROOT_DOMAIN: z.string().min(1).default("localhost:3000"),
 
-  DATABASE_URL: optional,
-  DIRECT_URL: optional,
+    DATABASE_URL: optional,
+    DIRECT_URL: optional,
 
-  SUPABASE_URL: z.url().optional(),
-  SUPABASE_SERVICE_ROLE_KEY: optional,
+    SUPABASE_URL: z.url().optional(),
+    SUPABASE_SERVICE_ROLE_KEY: optional,
 
-  AUTH_JWT_SECRET: secret.optional(),
-  LINK_SIGNING_SECRET: secret.optional(),
+    AUTH_JWT_SECRET: secret.optional(),
+    LINK_SIGNING_SECRET: secret.optional(),
 
-  /** sandbox (default) or live; picks the Interswitch endpoints. */
-  ISW_ENVIRONMENT: z.enum(["sandbox", "live"]).default("sandbox"),
-  /** API base for the status check; defaults per ISW_ENVIRONMENT. */
-  ISW_BASE_URL: z.url().optional(),
-  ISW_MERCHANT_CODE: optional,
-  ISW_PAY_ITEM_ID: optional,
-  ISW_CLIENT_ID: optional,
-  ISW_SECRET: optional,
-  ISW_WEBHOOK_SECRET: optional,
+    /** sandbox (default) or live; picks the Interswitch endpoints. */
+    ISW_ENVIRONMENT: z.enum(["sandbox", "live"]).default("sandbox"),
+    /** API base for the status check; defaults per ISW_ENVIRONMENT. */
+    ISW_BASE_URL: z.url().optional(),
+    ISW_MERCHANT_CODE: optional,
+    ISW_PAY_ITEM_ID: optional,
+    ISW_CLIENT_ID: optional,
+    ISW_SECRET: optional,
+    ISW_WEBHOOK_SECRET: optional,
 
-  NOTIFY_MODE: z.enum(["console", "live"]).default("console"),
-  TERMII_API_KEY: optional,
-  TERMII_SENDER_ID: optional,
-  /** Account-specific; shown on the Termii dashboard. */
-  TERMII_BASE_URL: z.url().optional(),
-  /** "dnd" for transactional messages (reaches DND numbers); needs activating with Termii. */
-  TERMII_CHANNEL: z.enum(["dnd", "generic"]).default("dnd"),
-  WA_PHONE_NUMBER_ID: optional,
-  WA_TOKEN: optional,
+    /**
+     * console = messages go to the server log; live = sent for real. Unset:
+     * live in production (so codes are never silently not sent), console
+     * otherwise. Setting console in production is allowed (e.g. a preview)
+     * but logged loudly on first use.
+     */
+    NOTIFY_MODE: z.enum(["console", "live"]).optional(),
+    TERMII_API_KEY: optional,
+    TERMII_SENDER_ID: optional,
+    /** Account-specific; shown on the Termii dashboard. */
+    TERMII_BASE_URL: z.url().optional(),
+    /** "dnd" for transactional messages (reaches DND numbers); needs activating with Termii. */
+    TERMII_CHANNEL: z.enum(["dnd", "generic"]).default("dnd"),
+    WA_PHONE_NUMBER_ID: optional,
+    WA_TOKEN: optional,
 
-  QSTASH_TOKEN: optional,
-  QSTASH_CURRENT_SIGNING_KEY: optional,
-  QSTASH_NEXT_SIGNING_KEY: optional,
+    QSTASH_TOKEN: optional,
+    QSTASH_CURRENT_SIGNING_KEY: optional,
+    QSTASH_NEXT_SIGNING_KEY: optional,
 
-  SENTRY_DSN: z.url().optional(),
-});
+    SENTRY_DSN: z.url().optional(),
+  })
+  .transform((env) => ({
+    ...env,
+    NOTIFY_MODE:
+      env.NOTIFY_MODE ?? (env.NODE_ENV === "production" ? "live" : "console"),
+  }));
 export type ServerEnv = z.infer<typeof ServerEnv>;
 
 /** process.env, or a plain object in tests. */
@@ -82,7 +94,17 @@ export function serverEnv(source: EnvSource = process.env): ServerEnv {
     );
     throw new Error(`Invalid environment variables:\n${lines.join("\n")}`);
   }
-  if (source === process.env) cached = parsed.data;
+  if (source === process.env) {
+    cached = parsed.data;
+    if (
+      parsed.data.NODE_ENV === "production" &&
+      parsed.data.NOTIFY_MODE === "console"
+    ) {
+      console.warn(
+        "[env] NOTIFY_MODE=console in production: sign-in codes and messages are NOT sent, only logged.",
+      );
+    }
+  }
   return parsed.data;
 }
 

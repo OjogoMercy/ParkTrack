@@ -164,14 +164,16 @@ function codeSecret(): string {
 /**
  * Sends the code through @/server/notify (Scope 03): WhatsApp code template
  * or SMS with fallback in live mode, the server log in console mode (codes
- * blanked in production). Returns the channel that delivered it.
+ * blanked in production). Returns the channel that delivered it, or false
+ * when nothing was delivered.
  */
 async function deliverCode(
   phone: string,
   code: string,
   channel: OtpChannel,
-): Promise<OtpChannel> {
-  return (await sendCode(phone, code, channel)).channel;
+): Promise<OtpChannel | false> {
+  const sent = await sendCode(phone, code, channel);
+  return sent.delivered ? sent.channel : false;
 }
 
 /**

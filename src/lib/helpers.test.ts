@@ -145,6 +145,14 @@ describe("env", () => {
     expect(env.DATABASE_URL).toBeUndefined();
   });
 
+  it("sends for real in production unless told otherwise", () => {
+    expect(serverEnv({ NODE_ENV: "production" }).NOTIFY_MODE).toBe("live");
+    expect(serverEnv({ NODE_ENV: "development" }).NOTIFY_MODE).toBe("console");
+    expect(
+      serverEnv({ NODE_ENV: "production", NOTIFY_MODE: "console" }).NOTIFY_MODE,
+    ).toBe("console");
+  });
+
   it("rejects weak secrets and names missing required keys", () => {
     expect(() => serverEnv({ AUTH_JWT_SECRET: "short" })).toThrow(
       /AUTH_JWT_SECRET/,
