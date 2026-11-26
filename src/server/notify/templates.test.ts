@@ -14,7 +14,6 @@ import {
 
 const links = messageLinks({
   rootDomain: "parktrack.ng",
-  originSlug: "ogbomoso",
   parcelCode: "PT-7K3Q",
   recipientToken: "trkLinkId.mxyz.sig",
 });
@@ -173,15 +172,19 @@ describe("message details", () => {
 
 describe("links", () => {
   it("uses http only for local roots", () => {
-    expect(siteUrl("parktrack.ng", "ogbomoso", "/x")).toBe(
-      "https://ogbomoso.parktrack.ng/x",
+    expect(siteUrl("parktrack.ng", "/x")).toBe("https://parktrack.ng/x");
+    expect(siteUrl("localhost:3000", "/console/driver")).toBe(
+      "http://localhost:3000/console/driver",
     );
-    expect(siteUrl("localhost:3000", "app", "/driver")).toBe(
-      "http://app.localhost:3000/driver",
-    );
-    expect(siteUrl("parktrack.localhost:3000", null, "/t/a")).toBe(
+    expect(siteUrl("parktrack.localhost:3000", "/t/a")).toBe(
       "http://parktrack.localhost:3000/t/a",
     );
+  });
+
+  it("everything is on the main domain, staff under /console (Q45)", () => {
+    expect(links.booking).toBe("https://parktrack.ng/parcels/booked/PT-7K3Q");
+    expect(links.driver).toBe("https://parktrack.ng/console/driver");
+    expect(links.originCounter).toBe("https://parktrack.ng/console/counter");
   });
 });
 

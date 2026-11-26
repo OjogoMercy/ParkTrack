@@ -8,6 +8,8 @@
 | Design source | Origin agent **A01** counter today, **A02** scan sender QR, **A03** check in (size, write code, photo), **A04** walk-in booking, **A05** walk-in payment + handshake, **A06** assign to driver, **A07** loads |
 | PRD | §6.1 steps 1a, 3, 4, 5; BOOK-6, HS-2 … HS-8, DRV-1, DRV-2, DASH-1 (origin half), §6.5 (bigger parcel, no smartphone, refused item) |
 
+> **One domain since [Q45](../reference/open-questions.md):** routes below are on `parktrack.ng`; there are no park subdomains and no `app.` host. Console routes keep their `/console/…` paths.
+
 ## Goal
 
 At the counter, the agent confirms the sender is present (scan their QR, or the sender scans the agent's QR, or an SMS code), checks the parcel, writes `PT-XXXX` on it, takes a photo, and the recipient gets their tracking link **at that moment**. The agent then assigns parcels to a driver and watches until the driver accepts.
@@ -25,7 +27,7 @@ src/app/api/counter/**                 # today list, loads list, walk-in
 src/features/counter/**
 ```
 
-## Routes (`app.parktrack.ng`, role `agent`, park-scoped)
+## Routes (`parktrack.ng`, role `agent`, park-scoped)
 
 | Route | Screen |
 |---|---|

@@ -85,11 +85,7 @@ export async function createSignedUpload(args: {
   const path = `${bucket}/${object}`;
   return {
     uploadUrl: signed.signedUrl,
-    publicUrl: siteUrl(
-      serverEnv().ROOT_DOMAIN,
-      null,
-      `/api/uploads/view/${path}`,
-    ),
+    publicUrl: siteUrl(serverEnv().ROOT_DOMAIN, `/api/uploads/view/${path}`),
     path,
   };
 }

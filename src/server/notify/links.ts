@@ -11,13 +11,12 @@ function scheme(rootDomain: string): "http" | "https" {
     : "https";
 }
 
-export function siteUrl(
-  rootDomain: string,
-  subdomain: string | null,
-  path = "/",
-): string {
-  const host = subdomain ? `${subdomain}.${rootDomain}` : rootDomain;
-  return `${scheme(rootDomain)}://${host}${path}`;
+/**
+ * An address on the main domain: everything is served there, the staff
+ * console under /console (decision Q45).
+ */
+export function siteUrl(rootDomain: string, path = "/"): string {
+  return `${scheme(rootDomain)}://${rootDomain}${path}`;
 }
 
 export type MessageLinks = {
@@ -32,24 +31,22 @@ export type MessageLinks = {
 
 export function messageLinks({
   rootDomain,
-  originSlug,
   parcelCode,
   recipientToken,
 }: {
   rootDomain: string;
-  originSlug: string;
   parcelCode: string;
   recipientToken: string | null;
 }): MessageLinks {
   return {
-    sender: siteUrl(rootDomain, originSlug, `/parcels/${parcelCode}`),
-    booking: siteUrl(rootDomain, originSlug, `/parcels/booked/${parcelCode}`),
+    sender: siteUrl(rootDomain, `/parcels/${parcelCode}`),
+    booking: siteUrl(rootDomain, `/parcels/booked/${parcelCode}`),
     recipient: recipientToken
-      ? siteUrl(rootDomain, null, `/t/${recipientToken}`)
+      ? siteUrl(rootDomain, `/t/${recipientToken}`)
       : null,
-    driver: siteUrl(rootDomain, "app", "/driver"),
-    originCounter: siteUrl(rootDomain, "app", "/counter"),
-    arrivals: siteUrl(rootDomain, "app", "/arrivals"),
-    parkAdmin: siteUrl(rootDomain, "app", "/park"),
+    driver: siteUrl(rootDomain, "/console/driver"),
+    originCounter: siteUrl(rootDomain, "/console/counter"),
+    arrivals: siteUrl(rootDomain, "/console/arrivals"),
+    parkAdmin: siteUrl(rootDomain, "/console/park"),
   };
 }

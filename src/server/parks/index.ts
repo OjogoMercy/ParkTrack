@@ -6,14 +6,12 @@
  * admin edit). "Open now" depends on the clock, so it is worked out per
  * request, outside the cache.
  */
-import { headers } from "next/headers";
 import { cacheLife, cacheTag } from "next/cache";
 import { connection } from "next/server";
 import type { ParkPublic, ParkRef } from "@/contracts/dto";
 import type { SizeClass } from "@/contracts/enums";
 import { db } from "@/lib/db";
 import { openStatus, type OpeningHours } from "@/lib/dates";
-import { resolveHost } from "./host";
 
 export const STUB = false;
 
@@ -122,7 +120,7 @@ export function withOpenStatus(
 }
 
 /**
- * A live park by subdomain slug (cached, no clock-dependent fields), or null.
+ * A live park by slug (cached, no clock-dependent fields), or null.
  * Use this in pages and layouts: it keeps them prerenderable and instant.
  * Show "open now" with a request-time or client component instead.
  */
@@ -142,14 +140,7 @@ export async function getParkPublic(slug: string): Promise<ParkPublic | null> {
   return withOpenStatus(record);
 }
 
-/** Park resolved from the request host (subdomain), or null if unknown. */
-export async function currentPark(): Promise<ParkPublic | null> {
-  const host = (await headers()).get("host") ?? "";
-  const target = resolveHost(host, process.env.ROOT_DOMAIN || "localhost:3000");
-  return target.kind === "park" ? getParkPublic(target.slug) : null;
-}
-
-/** Live parks, listed on the "park not found" page (S13). */
+/** Live parks, listed on the home page to pick a park from (Q45). */
 export async function listLiveParks(): Promise<ParkRef[]> {
   "use cache";
   cacheLife("hours");

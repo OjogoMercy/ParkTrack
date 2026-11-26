@@ -1,7 +1,7 @@
 /**
  * Owned by Scope 02 (docs/scopes/02-parks-identity.md). Exported names and
  * types are FINAL; callers never change. Everything here is real:
- * sign-in codes (sl3), session (sl4), staff sign-in (sl5), roles and
+ * sign-in codes (sl3), session (sl4), sign-in (sl5; one for everyone since Q45), roles and
  * tenancy (sl6), recipient links (sl7), rate limits (sl8).
  */
 import "server-only";
@@ -23,7 +23,7 @@ import {
   sessionCookieOptions,
 } from "./session";
 import { assertParkStaff, parkScope as tenancyScope } from "./tenancy";
-import { isStaffPhone, loadSessionUser, signInUser } from "./users";
+import { loadSessionUser, signInUser } from "./users";
 import { createLinkToken, readLinkToken } from "./recipient-link";
 import { db } from "@/lib/db";
 import { trackingLinkId } from "@/lib/ids";
@@ -186,8 +186,9 @@ async function deliverCode(
 }
 
 /**
- * Checks the code, creates the user if new (a sender tied to signupParkId,
- * AUTH-3), and sets the network-wide session cookie. Call from a Route
+ * Checks the code, creates the account if new (a USER: sending or
+ * receiving is what they do, not a role, Q45), and sets the session
+ * cookie. Staff sign in the same way and land on their console. Call from a Route
  * Handler or Server Action (cookies can only be set there). Throws
  * AuthError: the checkSignInCode errors, or account_deactivated.
  */
@@ -202,46 +203,12 @@ export async function verifyOtp(
   return result;
 }
 
-/**
- * Console sign-in (app.ROOT_DOMAIN): like sendOtp, but only for staff
- * (agents, drivers, park and platform admins). Unknown phones and senders
- * get not_staff and no code is sent, so the console never creates accounts.
- */
-export async function sendStaffOtp(
-  phone: string,
-  channel: "WHATSAPP" | "SMS" = "WHATSAPP",
-): ReturnType<typeof sendOtp> {
-  if (!(await isStaffPhone(toE164(phone)))) throw notStaff();
-  return sendOtp(phone, channel);
-}
-
-/** Console sign-in: checks the code and signs in an existing staff member. */
-export async function verifyStaffOtp(
-  phone: string,
-  code: string,
-): Promise<{ user: SessionUser; isNew: false }> {
-  const e164 = toE164(phone);
-  if (!(await isStaffPhone(e164))) throw notStaff();
-  await checkSignInCode(e164, code);
-  const { user } = await signInUser(e164, undefined);
-  await setSessionCookie(user.id);
-  return { user, isNew: false };
-}
-
-function notStaff() {
-  return new AuthError(
-    "not_staff",
-    "This number isn't on a ParkTrack staff account. Senders sign in on their park's page. If you work at a park, ask your park admin to add you.",
-    403,
-  );
-}
-
 async function setSessionCookie(userId: string): Promise<void> {
   const token = await createSessionToken(userId, sessionSecret());
   (await cookies()).set(SESSION_COOKIE, token, cookieOptions());
 }
 
-/** Clears the session cookie on the root domain (every subdomain). */
+/** Clears the session cookie. */
 export async function signOut(): Promise<void> {
   // Same domain and path as when it was set, or the browser keeps it.
   (await cookies()).set(SESSION_COOKIE, "", { ...cookieOptions(), maxAge: 0 });

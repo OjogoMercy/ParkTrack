@@ -1,13 +1,14 @@
 import { Suspense } from "react";
 import { TopBar } from "@/components/ui/shells";
-import { parkHostLabel } from "@/server/parks/host";
+import { parkAddressLabel } from "@/server/parks/host";
 import { HeaderAccount, HeaderAccountSkeleton } from "./header-account";
 import { ParkInitials } from "./logo";
 
 /**
- * Park top bar from S01/S08: initials tile, park name, subdomain, and on the
- * right either "Sign in" or the signed-in person's initials (linking to
- * /account). Pages on a park subdomain pass it to <MobileShell topBar={…}>.
+ * Park top bar from S01/S08: initials tile, park name, the park's address
+ * (parktrack.ng/parks/{slug}, Q45), and on the right either "Sign in" or the
+ * signed-in person's initials (linking to /account). Park pages pass it to
+ * <MobileShell topBar={…}>.
  * Pass `trailing` to replace the right side with the page's own control.
  *
  * The account slot reads the session inside its own <Suspense>, so the rest
@@ -23,7 +24,7 @@ export function ParkHeader({
   /** Path to return to after signing in, e.g. "/send". */
   signInNext?: string;
 }) {
-  const host = parkHostLabel(
+  const address = parkAddressLabel(
     park.slug,
     process.env.ROOT_DOMAIN || "localhost:3000",
   );
@@ -34,7 +35,7 @@ export function ParkHeader({
     <TopBar
       leading={<ParkInitials name={park.slug} />}
       title={<span className="text-[15px]">{park.name}</span>}
-      sub={host}
+      sub={address}
       trailing={
         trailing ?? (
           <Suspense fallback={<HeaderAccountSkeleton />}>

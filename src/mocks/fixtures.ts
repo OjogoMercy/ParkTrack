@@ -83,7 +83,7 @@ export const toluSession: D.SessionUser = {
   id: "user_tolu",
   phone: "+2340000000101",
   name: "Tolu Adeyemi",
-  role: "SENDER",
+  role: "USER",
   park: null,
   signupPark: ogbomoso,
   isVendor: true,

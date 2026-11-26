@@ -5,7 +5,7 @@ import type { Role } from "@/contracts/enums";
  * pages and src/proxy.ts can all use it.
  */
 
-/** Home screen on app.ROOT_DOMAIN for each staff role; senders have none. */
+/** Console home for each staff role; a USER account has none (it goes to "/"). */
 export function consoleHome(role: Role): string | null {
   switch (role) {
     case "AGENT":
@@ -34,12 +34,4 @@ export function safeNext(
   if (value.startsWith("//") || value.startsWith("/\\")) return null;
   if (/[\u0000-\u001f]/.test(value)) return null;
   return value;
-}
-
-/**
- * Console paths are served under /console internally but appear without it
- * in the browser (app.parktrack.ng/counter). Strip the prefix for links.
- */
-export function consolePublicPath(path: string): string {
-  return path.replace(/^\/console(?=\/|$)/, "") || "/";
 }

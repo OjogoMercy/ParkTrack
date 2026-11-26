@@ -9,20 +9,24 @@ import {
 import { routeRequest } from "@/server/parks/host";
 
 /**
- * Subdomain routing (Next.js 16 "proxy", formerly middleware; Node runtime),
- * plus the rolling refresh of the session cookie.
+ * One domain (decision Q45): old park and app. subdomains redirect to the
+ * main domain, signed-out visitors to the staff console are sent to sign in,
+ * and the session cookie is refreshed (Next.js 16 "proxy", formerly
+ * middleware; Node runtime).
  *
  * Reads only the Host header and cookie: no database calls here.
- * Whether a park slug actually exists is checked by the park layout
- * (src/app/sites/[park]/layout.tsx), which shows "park not found" (S13).
  */
 export async function proxy(request: NextRequest) {
   const host = request.headers.get("host") ?? "";
   const rootDomain = process.env.ROOT_DOMAIN || "localhost:3000";
   const decision = routeRequest(host, request.nextUrl.pathname, rootDomain);
 
-  if (decision.action === "not_found") {
-    return new NextResponse("Not found", { status: 404 });
+  if (decision.action === "redirect") {
+    const url = request.nextUrl.clone();
+    url.pathname = decision.pathname;
+    if (decision.toRoot) url.host = rootDomain;
+    // Old addresses moved for good; the sign-in move is just a redirect.
+    return NextResponse.redirect(url, decision.toRoot ? 308 : 307);
   }
 
   // Signature and expiry only (no database); getSession() still checks the
@@ -33,29 +37,20 @@ export async function proxy(request: NextRequest) {
     : null;
 
   // No console page renders for a signed-out visitor: send them to sign in
-  // and back to where they were going.
+  // and back to where they were going. (A signed-in person without a staff
+  // role is sent home by the console itself.)
+  const pathname = request.nextUrl.pathname;
   if (
-    decision.action === "rewrite" &&
-    decision.pathname.startsWith("/console") &&
-    !CONSOLE_PUBLIC.has(decision.pathname) &&
+    (pathname === "/console" || pathname.startsWith("/console/")) &&
     !claims
   ) {
     const url = request.nextUrl.clone();
-    const original = request.nextUrl.pathname + request.nextUrl.search;
     url.pathname = "/signin";
-    url.search =
-      original === "/" ? "" : `?next=${encodeURIComponent(original)}`;
+    url.search = `?next=${encodeURIComponent(pathname + request.nextUrl.search)}`;
     return NextResponse.redirect(url);
   }
 
-  let response: NextResponse;
-  if (decision.action === "next") {
-    response = NextResponse.next();
-  } else {
-    const url = request.nextUrl.clone();
-    url.pathname = decision.pathname;
-    response = NextResponse.rewrite(url);
-  }
+  const response = NextResponse.next();
 
   // Rolling 30-day session: once the cookie is a day old, re-issue it so
   // people who keep using the app stay signed in.
@@ -68,9 +63,6 @@ export async function proxy(request: NextRequest) {
   }
   return response;
 }
-
-/** Console paths a signed-out visitor may open. */
-const CONSOLE_PUBLIC = new Set(["/console/signin"]);
 
 export const config = {
   // Everything except API routes, Next internals and static files.

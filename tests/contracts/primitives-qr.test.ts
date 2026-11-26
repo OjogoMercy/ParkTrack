@@ -64,7 +64,7 @@ describe("QR payloads (random IDs only)", () => {
       `https://parktrack.ng/collect/${TOKEN}`,
     );
     expect(handshakeQrUrl("localhost:3000", TOKEN)).toBe(
-      `http://app.localhost:3000/h/${TOKEN}`,
+      `http://localhost:3000/h/${TOKEN}`,
     );
   });
 

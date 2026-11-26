@@ -34,8 +34,7 @@ export async function GET(
         accountRefId = user.park.id;
       } else if (
         (account === "DRIVER" && user.role === "DRIVER") ||
-        ((account === "VENDOR" || account === "SENDER") &&
-          user.role === "SENDER")
+        ((account === "VENDOR" || account === "SENDER") && user.role === "USER")
       ) {
         accountRefId = user.id;
       } else {

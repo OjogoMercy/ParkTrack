@@ -7,7 +7,7 @@ import { Field, PhoneInput } from "@/components/ui/field";
 import { OtpInput } from "@/components/ui/otp-input";
 import { BottomBar } from "@/components/ui/shells";
 import { cn } from "@/lib/utils";
-import { consoleHome, consolePublicPath } from "./redirects";
+import { consoleHome } from "./redirects";
 
 type Channel = "WHATSAPP" | "SMS";
 type ApiErrorBody = {
@@ -21,8 +21,9 @@ const CHANNEL_NAME: Record<Channel, string> = {
 };
 
 /**
- * S02 sign-in: phone → 6-digit code → signed in. Used on park subdomains
- * (senders) and on the console (staff, `staff` set). Talks to
+ * S02 sign-in: phone → 6-digit code → signed in. One sign-in for everyone
+ * (Q45): afterwards staff go to their console, everyone else to `next` or
+ * home. Talks to
  * POST /api/auth/otp and /api/auth/verify; the session cookie is set by the
  * server, then the page does a full navigation to `next` so every server
  * component re-reads the session.
@@ -31,7 +32,6 @@ export function SignInForm({
   title,
   intro,
   next,
-  staff = false,
   footnote,
   banner,
 }: {
@@ -39,8 +39,6 @@ export function SignInForm({
   intro: React.ReactNode;
   /** Safe path to open after signing in (already checked by the page). */
   next: string | null;
-  /** Console sign-in: send staff to their role's home when there's no `next`. */
-  staff?: boolean;
   footnote: React.ReactNode;
   /** Shown under the intro, e.g. who is already signed in. */
   banner?: React.ReactNode;
@@ -130,8 +128,8 @@ export function SignInForm({
         user?: SessionUser;
       };
       if (res.ok && body.user) {
-        const home = staff ? consoleHome(body.user.role) : null;
-        window.location.assign(next ?? (home ? consolePublicPath(home) : "/"));
+        // One sign-in for everyone (Q45): staff go to their console.
+        window.location.assign(next ?? consoleHome(body.user.role) ?? "/");
         return; // keep the button busy while the next page loads
       }
       setCodeError(body.error?.message ?? "Couldn't check the code.");

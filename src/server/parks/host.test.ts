@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   hostnameOf,
-  parkHostLabel,
-  parkUrl,
+  parkAddressLabel,
+  parkPath,
   resolveHost,
   routeRequest,
 } from "./host";
@@ -54,64 +54,62 @@ describe("resolveHost", () => {
   });
 });
 
-describe("routeRequest", () => {
-  it("rewrites park hosts into /sites/{slug}", () => {
-    expect(routeRequest("ogbomoso.parktrack.ng", "/", PROD)).toEqual({
-      action: "rewrite",
-      pathname: "/sites/ogbomoso",
+describe("routeRequest (one domain, Q45)", () => {
+  const go = (pathname: string, toRoot = true) => ({
+    action: "redirect",
+    pathname,
+    toRoot,
+  });
+
+  it("serves the main domain directly", () => {
+    for (const path of [
+      "/",
+      "/t/abc",
+      "/collect/xyz",
+      "/console/counter",
+      "/parks/ogbomoso",
+      "/signin",
+    ])
+      expect(routeRequest("parktrack.ng", path, PROD), path).toEqual({
+        action: "next",
+      });
+    expect(routeRequest("localhost:3000", "/send", DEV)).toEqual({
+      action: "next",
     });
+  });
+
+  it("sends old park addresses to the park's page on the main domain", () => {
+    expect(routeRequest("ogbomoso.parktrack.ng", "/", PROD)).toEqual(
+      go("/parks/ogbomoso"),
+    );
     expect(routeRequest("ogbomoso.parktrack.ng", "/send/review", PROD)).toEqual(
-      { action: "rewrite", pathname: "/sites/ogbomoso/send/review" },
+      go("/send/review"),
+    );
+    expect(routeRequest("ibadan.localhost:3000", "/", DEV)).toEqual(
+      go("/parks/ibadan"),
     );
   });
 
-  it("rewrites app. into /console without doubling the prefix", () => {
-    expect(routeRequest("app.parktrack.ng", "/", PROD)).toEqual({
-      action: "rewrite",
-      pathname: "/console",
-    });
-    expect(routeRequest("app.parktrack.ng", "/counter/scan", PROD)).toEqual({
-      action: "rewrite",
-      pathname: "/console/counter/scan",
-    });
-    expect(routeRequest("app.parktrack.ng", "/console/driver", PROD)).toEqual({
-      action: "rewrite",
-      pathname: "/console/driver",
-    });
+  it("sends old console addresses to /console on the main domain", () => {
+    expect(routeRequest("app.parktrack.ng", "/", PROD)).toEqual(go("/console"));
+    expect(routeRequest("app.parktrack.ng", "/counter/scan", PROD)).toEqual(
+      go("/console/counter/scan"),
+    );
+    expect(routeRequest("app.parktrack.ng", "/console/driver", PROD)).toEqual(
+      go("/console/driver"),
+    );
+    expect(routeRequest("app.parktrack.ng", "/signin", PROD)).toEqual(
+      go("/signin"),
+    );
   });
 
-  it("leaves the public root alone and hides internal trees there", () => {
-    expect(routeRequest("parktrack.ng", "/t/abc", PROD)).toEqual({
-      action: "next",
-    });
-    expect(routeRequest("parktrack.ng", "/collect/xyz", PROD)).toEqual({
-      action: "next",
-    });
-    expect(routeRequest("parktrack.ng", "/sites/ogbomoso", PROD)).toEqual({
-      action: "not_found",
-    });
-    expect(routeRequest("parktrack.ng", "/console", PROD)).toEqual({
-      action: "not_found",
-    });
-    expect(routeRequest("parktrack.ng", "/sitesmap", PROD)).toEqual({
-      action: "next",
-    });
-  });
-
-  it("blocks cross-tree paths on park hosts", () => {
-    expect(
-      routeRequest("ogbomoso.parktrack.ng", "/sites/ibadan", PROD),
-    ).toEqual({ action: "not_found" });
-    expect(routeRequest("ogbomoso.parktrack.ng", "/console", PROD)).toEqual({
-      action: "not_found",
-    });
-  });
-
-  it("sends unknown subdomains to the park-not-found page (S13)", () => {
-    expect(routeRequest("admin.parktrack.ng", "/anything", PROD)).toEqual({
-      action: "rewrite",
-      pathname: "/not-found-park",
-    });
+  it("sends unknown subdomains home, and the old staff sign-in to /signin", () => {
+    expect(routeRequest("admin.parktrack.ng", "/anything", PROD)).toEqual(
+      go("/"),
+    );
+    expect(routeRequest("parktrack.ng", "/console/signin", PROD)).toEqual(
+      go("/signin", false),
+    );
   });
 });
 
@@ -122,9 +120,9 @@ describe("helpers", () => {
     );
   });
 
-  it("builds park URLs and labels", () => {
-    expect(parkUrl("ibadan", PROD)).toBe("https://ibadan.parktrack.ng");
-    expect(parkUrl("ibadan", DEV)).toBe("http://ibadan.localhost:3000");
-    expect(parkHostLabel("ibadan", DEV)).toBe("ibadan.localhost");
+  it("builds park page paths and labels", () => {
+    expect(parkPath("ibadan")).toBe("/parks/ibadan");
+    expect(parkAddressLabel("ibadan", PROD)).toBe("parktrack.ng/parks/ibadan");
+    expect(parkAddressLabel("ibadan", DEV)).toBe("localhost/parks/ibadan");
   });
 });

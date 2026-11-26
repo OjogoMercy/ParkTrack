@@ -21,7 +21,6 @@ export async function GET(request: Request): Promise<Response> {
   }
   const target = siteUrl(
     serverEnv().ROOT_DOMAIN,
-    null,
     `/pay/${encodeURIComponent(ref)}`,
   );
   return new Response(null, {

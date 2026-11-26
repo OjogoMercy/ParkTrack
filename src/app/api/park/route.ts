@@ -1,37 +1,37 @@
 import { GetPark } from "@/contracts/api";
 import type { ApiError } from "@/contracts/primitives";
-import { errorResponse } from "@/server/auth";
+import { errorResponse, invalidInputResponse } from "@/server/auth";
 import { getParkPublic } from "@/server/parks";
-import { resolveHost } from "@/server/parks/host";
 
 /**
- * GET /api/park — the park for the requesting subdomain (PARK-1): name,
+ * GET /api/park?slug=ogbomoso — one park's public page data (PARK-1): name,
  * address, opening hours and open-now, routes with fares by size, roadside
- * points, storage rules and counter location.
+ * points, storage rules and counter location. Looked up by slug: everything
+ * is on one domain (Q45), so the host no longer says which park.
  *
- * API routes bypass src/proxy.ts, so the Host header is still the park's.
  * "Open now" is per request, so the response is never cached by clients.
  */
 export async function GET(request: Request): Promise<Response> {
-  try {
-    const host = request.headers.get("host") ?? "";
-    const target = resolveHost(
-      host,
-      process.env.ROOT_DOMAIN || "localhost:3000",
+  const parsed = GetPark.query.safeParse({
+    slug: new URL(request.url).searchParams.get("slug") ?? undefined,
+  });
+  if (!parsed.success) {
+    return invalidInputResponse(
+      parsed.error,
+      "Say which park, e.g. ?slug=ogbomoso.",
     );
-    const park =
-      target.kind === "park" ? await getParkPublic(target.slug) : null;
-
+  }
+  try {
+    const park = await getParkPublic(parsed.data.slug);
     if (!park) {
       const body: ApiError = {
         error: {
           code: "park_not_found",
-          message: "There's no ParkTrack park at this address.",
+          message: "There's no ParkTrack park with that name.",
         },
       };
       return Response.json(body, { status: 404 });
     }
-
     return Response.json(GetPark.response.parse(park), {
       headers: { "Cache-Control": "no-store" },
     });

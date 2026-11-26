@@ -8,6 +8,8 @@
 | Design source | Arrival agent **V01** buses arriving, **V02** tick off the load, **V03** parcels in the store, **V04** release with code, **V05** code locked after 5 tries; Recipient **R04** at the counter: pay dues, **R05** read code to agent, **R06** collected receipt |
 | PRD | §6.3, ARR-1 … ARR-4, COL-1 … COL-6, DASH-1 (arrival half), §6.4 (park settlement), §6.5 (missing at arrival, damaged, wrong code, delegate) |
 
+> **One domain since [Q45](../reference/open-questions.md):** routes below are on `parktrack.ng`; there are no park subdomains and no `app.` host. Console routes keep their `/console/…` paths.
+
 ## Goal
 
 At the destination park the arrival agent scans the driver's manifest QR **once**, ticks off each parcel with its bay (flagging anything missing while the driver is still there), and the recipient is notified, which starts the free window. At the counter the recipient scans the park's fixed QR, pays any dues on their own phone, gets a 6-digit code, reads it to the agent, and the parcel is released and settled.

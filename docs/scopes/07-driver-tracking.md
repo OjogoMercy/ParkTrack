@@ -8,6 +8,8 @@
 | Design source | Driver **D01** load to accept, **D02** trip in progress, **D03** roadside handover with code, **D04** mark as missed, **D05** manifest QR, **D06** earnings; Senderv2 **S09** awaiting drop-off, **S10** in transit with live map, **S11** collected / proof of delivery; Recipient **R01** bus approaching + pay dues, **R02** paid + handover code, **R03** ready to collect |
 | PRD | §6.1 step 6, §6.2 roadside, DRV-3, DRV-4, DRV-6, DRV-7 (simulated), RD-1 … RD-5, TRK-1 … TRK-4, DASH-2, §6.4 (roadside settlement) |
 
+> **One domain since [Q45](../reference/open-questions.md):** routes below are on `parktrack.ng`; there are no park subdomains and no `app.` host. Console routes keep their `/console/…` paths.
+
 ## Goal
 
 The driver never scans. They see the load in route order, tap **Accept load** once (becoming the holder), share location while the app is open (simulated for the demo), hand roadside parcels over by entering the recipient's code (only after any POD is prepaid), mark Missed when needed, and show **one manifest QR** at the arrival park. Senders and recipients follow it all on tracking pages.
@@ -34,7 +36,7 @@ src/features/driver/**   src/features/tracking/**    # incl. Leaflet map, ETA, r
 | `/console/driver/handover/[code]` | D03 keypad for the 6-digit code, Confirm handover (disabled while dues unpaid), "Recipient isn't here" → D04 sheet (Not at the stop / Code didn't match → Mark missed, keep on bus / Keep waiting) |
 | `/console/driver/manifest` | D05 manifest QR (token only) for every parcel still on the bus + list |
 | `/console/driver/earnings` | D06 week/month total, bars by day, trips with credited amounts (from `@/server/ledger`) |
-| `{park}.parktrack.ng/parcels/[code]` | S09 awaiting drop-off (QR, countdown, timeline, cancel), S10 in transit (live map, ETA, driver + plate + Verified, timeline, drop-off photo, POD status), S11 collected (proof of delivery, photos, code verified, released by, money breakdown, receipt, Report issue) |
+| `parktrack.ng/parcels/[code]` | S09 awaiting drop-off (QR, countdown, timeline, cancel), S10 in transit (live map, ETA, driver + plate + Verified, timeline, drop-off photo, POD status), S11 collected (proof of delivery, photos, code verified, released by, money breakdown, receipt, Report issue) |
 | `parktrack.ng/t/[link]` | R01 roadside approaching (stop strip, driver, "₦X due before handover … Drivers never take cash", Pay), R02 handover code shown after paying + "Can't make it?", R03 ready to collect (park, arrival time, free pickup until, bay, due on collection, how-to-collect steps, share link for delegate) |
 
 ## API

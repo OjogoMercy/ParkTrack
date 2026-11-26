@@ -70,7 +70,7 @@ describe("service stubs", () => {
     expect(auth.parkScope(F.bayoSession)).toHaveProperty("OR");
 
     if (parks.STUB) {
-      valid(D.ParkPublic, await parks.currentPark());
+      valid(D.ParkPublic, await parks.getParkPublic("ogbomoso"));
       valid(z.array(D.ParkRef), await parks.listLiveParks());
     }
 

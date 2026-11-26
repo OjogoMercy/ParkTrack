@@ -9,11 +9,13 @@ export type ParkListItem = {
   slug: string;
   displayName: string;
   city: string;
-  hostLabel: string;
-  url: string;
+  /** "parktrack.ng/parks/ogbomoso" */
+  addressLabel: string;
+  /** "/parks/ogbomoso" */
+  href: string;
 };
 
-/** S13 park list with "Search parks by city". */
+/** Park list with "Search parks by city": pick the park you send from (Q45). */
 export function ParkSearchList({ parks }: { parks: ParkListItem[] }) {
   const [query, setQuery] = useState("");
   const shown = useMemo(() => {
@@ -50,7 +52,7 @@ export function ParkSearchList({ parks }: { parks: ParkListItem[] }) {
                 className="border-t border-line first:border-t-0"
               >
                 <a
-                  href={p.url}
+                  href={p.href}
                   className="flex items-center gap-3 px-4 py-3 no-underline hover:bg-bg"
                 >
                   <ParkInitials name={p.slug} />
@@ -59,7 +61,7 @@ export function ParkSearchList({ parks }: { parks: ParkListItem[] }) {
                       {p.displayName}
                     </span>
                     <span className="truncate text-small text-fg-3">
-                      {p.hostLabel}
+                      {p.addressLabel}
                     </span>
                   </span>
                   <ChevronRight

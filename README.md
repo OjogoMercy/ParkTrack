@@ -48,7 +48,7 @@ Run the app:
 npm run dev
 ```
 
-It runs at http://localhost:3000. Park subdomains work locally as `http://ogbomoso.localhost:3000` once Scope 02 adds `src/proxy.ts`.
+It runs at http://localhost:3000. Everything is on that one address (decision Q45): parks at `/parks/ogbomoso`, the staff console at `/console`, one sign-in at `/signin`.
 
 No Supabase yet? `npx prisma dev` starts a local Postgres; put the URL it prints into both `DATABASE_URL` and `DIRECT_URL`.
 
@@ -94,8 +94,9 @@ src/lib/              helpers: db, env, money, ids, phone, dates, signing (Scope
 src/mocks/            fixtures and stub helpers (Scope 01)
 src/server/<module>/  server logic, one folder per module (owned per scope)
 src/features/<area>/  UI components for one scope
-src/app/sites/[park]/ park subdomain pages (senders)
-src/app/console/      app.parktrack.ng (agents, drivers, admins)
+src/app/(sender)/     sender pages on the main domain (/send, /parcels, /account)
+src/app/parks/[slug]/ a park's page (parktrack.ng/parks/ogbomoso)
+src/app/console/      staff console, parktrack.ng/console (agents, drivers, admins)
 src/app/{t,collect,pay}/  recipient tracking, counter collection, payment returns
 src/app/api/          route handlers
 prisma/               schema, migrations, seed (Scope 01)

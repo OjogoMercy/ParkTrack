@@ -131,7 +131,7 @@ export function ConsoleShell({
   className,
   children,
 }: {
-  /** Top of the sidebar, e.g. park initials + name + subdomain. */
+  /** Top of the sidebar, e.g. park initials + name + address. */
   brand: { name: string; sub?: string };
   nav: { label?: string; items: NavItem[] }[];
   user: { name: string; role: string };

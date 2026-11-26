@@ -100,14 +100,16 @@ Branches keep people apart while they work; folders keep the **merges into `main
 | Path | Scope |
 |---|---|
 | `prisma/**`, `src/contracts/**`, `src/components/ui/**`, `src/lib/**`, `src/mocks/**`, `.github/**`, root config | 01 |
-| `src/proxy.ts`, `src/server/{auth,parks}/**`, `src/app/sites/{layout,not-found}.tsx`, `src/app/sites/[park]/{layout.tsx,signin/**}`, `src/app/console/{page.tsx,layout.tsx,signin/**}`, `src/app/not-found-park/**`, `src/app/api/{auth,park}/**`, `src/features/identity/**` | 02 |
+| `src/proxy.ts`, `src/server/{auth,parks}/**`, `src/app/page.tsx`, `src/app/signin/**`, `src/app/console/{page.tsx,layout.tsx}`, `src/app/api/{auth,park}/**`, `src/features/identity/**` | 02 |
 | `src/server/{parcels,notify,uploads}/**`, `src/app/api/uploads/**`, `src/features/parcel-engine/**` | 03 |
 | `src/server/{payments,ledger}/**`, `src/app/pay/**`, `src/app/api/{payments,webhooks,ledger}/**`, `src/app/api/parcels/[id]/pay/**`, `src/app/api/jobs/requery/**`, `src/features/payments/**` | 04 |
-| `src/server/{booking,recipients,vendors}/**`, `src/app/sites/[park]/(sender)/**` *except* `parcels/[code]/**`, `src/app/api/parcels/route.ts`, `src/app/api/{me,quote}/**`, `src/features/sender/**` | 05 |
+| `src/server/{booking,recipients,vendors}/**`, `src/app/parks/[slug]/**` (S01; the placeholder is Scope 02's until then), `src/app/(sender)/**` *except* `parcels/[code]/**`, `src/app/api/parcels/route.ts`, `src/app/api/{me,quote}/**`, `src/features/sender/**` | 05 |
 | `src/server/{handshake,dropoff,assignment}/**`, `src/app/console/counter/**`, `src/app/api/{handshake,counter}/**`, `src/app/api/parcels/[id]/{dropoff,refuse}/**`, `src/app/api/parcels/assign/**`, `src/features/counter/**` | 06 |
-| `src/server/{trips,roadside,tracking}/**`, `src/app/console/driver/**`, `src/app/t/**`, `src/app/sites/[park]/(sender)/parcels/[code]/**`, `src/app/api/{driver,trips,track}/**`, `src/app/api/parcels/[id]/{roadside,cancel}/**`, `src/features/{driver,tracking}/**` | 07 |
+| `src/server/{trips,roadside,tracking}/**`, `src/app/console/driver/**`, `src/app/t/**`, `src/app/(sender)/parcels/[code]/**`, `src/app/api/{driver,trips,track}/**`, `src/app/api/parcels/[id]/{roadside,cancel}/**`, `src/features/{driver,tracking}/**` | 07 |
 | `src/server/{arrival,collection}/**`, `src/app/console/arrivals/**`, `src/app/collect/**`, `src/app/api/{manifests,collect,arrivals}/**`, `src/app/api/parcels/[id]/{release,admin-release}/**`, `src/features/{arrival,collection}/**` | 08 |
 | `src/server/{admin,jobs,disputes}/**`, `src/app/console/{park,platform}/**`, `src/app/api/{admin,disputes,dashboard}/**`, `src/app/api/jobs/**` *except* `requery/**`, `src/features/admin/**`, PWA + deploy config, `scripts/**`, `docs/demo-checklist.md` | 09 |
+
+**One domain (Q45):** every page is on the main domain. Sender pages (`/send`, `/parcels`, `/account`) live in the `src/app/(sender)/` route group, a park's page at `src/app/parks/[slug]/`, the staff console under `src/app/console/`. There are no park subdomains and no `app.` host.
 
 **Route-segment rule:** under `src/app/api/parcels/` the dynamic segment is always named `[id]` (Next.js forbids two different slug names at one level). Lookups by short code live under each scope's own prefix (for example `/api/track/parcel/[code]`).
 
