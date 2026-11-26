@@ -6,7 +6,10 @@
  */
 import "server-only";
 import type { NotificationEvent } from "@/contracts/notifications";
-import { NOTIFICATION_AUDIENCE } from "@/contracts/notifications";
+import {
+  NOTIFICATION_AUDIENCE,
+  type Audience,
+} from "@/contracts/notifications";
 import { db } from "@/lib/db";
 import { serverEnv } from "@/lib/env";
 import { deliver, type Attempt, type LiveChannel } from "./channels";
@@ -27,16 +30,17 @@ export async function notify(
   event: NotificationEvent,
   parcelId: string | null,
   extra: Record<string, string | number> = {},
-): Promise<{ sent: number }> {
+): Promise<{ sent: number; reached: Audience[] }> {
   let sent = 0;
+  const reached: Audience[] = [];
   try {
     const audiences = NOTIFICATION_AUDIENCE[event];
-    if (!parcelId || audiences.length === 0) return { sent };
+    if (!parcelId || audiences.length === 0) return { sent, reached };
     const env = serverEnv();
     const loaded = await loadMessageContext(parcelId, audiences, extra, {
       rootDomain: env.ROOT_DOMAIN,
     });
-    if (!loaded) return { sent };
+    if (!loaded) return { sent, reached };
 
     for (const person of loaded.people) {
       const text = renderMessage(
@@ -61,12 +65,15 @@ export async function notify(
         `${event}.${person.audience}`,
         parcelId,
       );
-      if (attempts.some((a) => a.ok)) sent++;
+      if (attempts.some((a) => a.ok)) {
+        sent++;
+        reached.push(person.audience);
+      }
     }
   } catch (e) {
     console.error(`[notify] ${event} for ${parcelId ?? "-"} failed`, e);
   }
-  return { sent };
+  return { sent, reached };
 }
 
 /**

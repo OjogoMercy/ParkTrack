@@ -293,96 +293,127 @@ export async function transition(
   details: TransitionDetails = {},
 ): Promise<ParcelSummary> {
   const now = new Date();
-  const { summary, from, eventType } = await db.$transaction(async (tx) => {
-    const parcel = await tx.parcel.findUnique({
-      where: { id: parcelId },
-      select: {
-        status: true,
-        originParkId: true,
-        destinationParkId: true,
-        senderId: true,
-        tripParcels: { select: { trip: { select: { driverId: true } } } },
-        originPark: { select: { dropoffDeadlineHours: true } },
-      },
-    });
-    if (!parcel) {
-      throw new ParcelError("parcel_not_found", "Parcel not found.", 404);
-    }
-    const from = parcel.status;
-    const rule = findTransition(from, to);
-    if (!rule) {
-      throw new ParcelError(
-        "transition_not_allowed",
-        from === to
-          ? `This parcel is already ${statusText(from)}.`
-          : `This parcel is ${statusText(from)}, so it can't be marked ${statusText(to)}.`,
-        409,
-      );
-    }
-    const user = by.userId
-      ? await tx.user.findUnique({
-          where: { id: by.userId },
-          select: { id: true, role: true, status: true, parkId: true },
-        })
-      : null;
-    const problem = actorProblem({
-      transition: rule,
-      actor: by.actor,
-      user,
-      parcel: {
-        ...parcel,
-        driverIds: parcel.tripParcels.map((tp) => tp.trip.driverId),
-      },
-    });
-    if (problem) throw new ParcelError("actor_not_allowed", problem, 403);
+  const { summary, from, eventType, notYetTold } = await db.$transaction(
+    async (tx) => {
+      const parcel = await tx.parcel.findUnique({
+        where: { id: parcelId },
+        select: {
+          status: true,
+          originParkId: true,
+          destinationParkId: true,
+          senderId: true,
+          tripParcels: { select: { trip: { select: { driverId: true } } } },
+          originPark: { select: { dropoffDeadlineHours: true } },
+          arrivalNotifiedAt: true,
+        },
+      });
+      if (!parcel) {
+        throw new ParcelError("parcel_not_found", "Parcel not found.", 404);
+      }
+      const from = parcel.status;
+      const rule = findTransition(from, to);
+      if (!rule) {
+        throw new ParcelError(
+          "transition_not_allowed",
+          from === to
+            ? `This parcel is already ${statusText(from)}.`
+            : `This parcel is ${statusText(from)}, so it can't be marked ${statusText(to)}.`,
+          409,
+        );
+      }
+      if (from === "DISPUTED" && to !== "RESOLVED") {
+        const back = await statusBeforeDispute(tx, parcelId);
+        if (back !== to) {
+          throw new ParcelError(
+            "transition_not_allowed",
+            back
+              ? `This parcel was ${statusText(back)} before the dispute, so it can only go back to that or be marked resolved.`
+              : "This dispute can only be closed as resolved.",
+            409,
+          );
+        }
+      }
+      const user = by.userId
+        ? await tx.user.findUnique({
+            where: { id: by.userId },
+            select: { id: true, role: true, status: true, parkId: true },
+          })
+        : null;
+      const problem = actorProblem({
+        transition: rule,
+        actor: by.actor,
+        user,
+        parcel: {
+          ...parcel,
+          driverIds: parcel.tripParcels.map((tp) => tp.trip.driverId),
+        },
+      });
+      if (problem) throw new ParcelError("actor_not_allowed", problem, 403);
 
-    const { count } = await tx.parcel.updateMany({
-      where: { id: parcelId, status: from },
-      data: {
-        status: to,
-        ...sideEffects(from, to, now, parcel.originPark.dropoffDeadlineHours),
-      },
-    });
-    if (count !== 1) {
-      throw new ParcelError(
-        "status_changed",
-        "This parcel was just updated by someone else. Refresh and try again.",
-        409,
-      );
-    }
-    const eventType = details.eventType ?? eventTypeFor(from, to);
-    await tx.parcelEvent.create({
-      data: {
-        parcelId,
-        type: eventType,
-        fromStatus: from,
-        toStatus: to,
-        actorId: user?.id ?? null,
-        lat: details.lat ?? null,
-        lng: details.lng ?? null,
-        photoUrl: details.photoUrl ?? null,
-        note: details.note ?? null,
-        meta: eventMeta(by, details.meta),
-        createdAt: now,
-      },
-    });
-    const updated = await tx.parcel.findUniqueOrThrow({
-      where: { id: parcelId },
-      include: summaryInclude,
-    });
-    return { summary: toParcelSummary(updated), from, eventType };
-  });
+      const { count } = await tx.parcel.updateMany({
+        where: { id: parcelId, status: from },
+        data: {
+          status: to,
+          ...sideEffects(from, to, now, parcel.originPark.dropoffDeadlineHours),
+        },
+      });
+      if (count !== 1) {
+        throw new ParcelError(
+          "status_changed",
+          "This parcel was just updated by someone else. Refresh and try again.",
+          409,
+        );
+      }
+      const eventType = details.eventType ?? eventTypeFor(from, to);
+      await tx.parcelEvent.create({
+        data: {
+          parcelId,
+          type: eventType,
+          fromStatus: from,
+          toStatus: to,
+          actorId: user?.id ?? null,
+          lat: details.lat ?? null,
+          lng: details.lng ?? null,
+          photoUrl: details.photoUrl ?? null,
+          note: details.note ?? null,
+          meta: eventMeta(by, details.meta),
+          createdAt: now,
+        },
+      });
+      const updated = await tx.parcel.findUniqueOrThrow({
+        where: { id: parcelId },
+        include: summaryInclude,
+      });
+      return {
+        summary: toParcelSummary(updated),
+        from,
+        eventType,
+        notYetTold: parcel.arrivalNotifiedAt === null,
+      };
+    },
+  );
 
-  const message = notificationFor(from, to, eventType);
+  // Any move into ARRIVED whose recipient hasn't been told yet is an
+  // arrival, e.g. a parcel found after it went missing (DISPUTED → ARRIVED).
+  const message =
+    notificationFor(from, to, eventType) ??
+    (to === "ARRIVED" && notYetTold ? "arrived_at_park" : null);
   if (message) {
     afterResponse(async () => {
-      await notify(message, parcelId);
+      const { reached } = await notify(message, parcelId);
       if (message === "arrived_at_park") {
-        // The free storage window starts when the recipient is told (COL-6).
-        await db.parcel.updateMany({
-          where: { id: parcelId, arrivalNotifiedAt: null },
-          data: { arrivalNotifiedAt: new Date() },
-        });
+        if (reached.includes("recipient")) {
+          // The free storage window starts when the recipient is told
+          // (COL-6), so only once a message really reached them.
+          await db.parcel.updateMany({
+            where: { id: parcelId, arrivalNotifiedAt: null },
+            data: { arrivalNotifiedAt: new Date() },
+          });
+        } else {
+          console.warn(
+            `[parcels] arrival notice for ${parcelId} didn't reach the recipient; storage clock not started`,
+          );
+        }
       }
     });
   }
@@ -503,6 +534,28 @@ function eventMeta(
   meta: Record<string, unknown> | undefined,
 ): Prisma.InputJsonValue {
   return { ...(meta ?? {}), actor: by.actor } as Prisma.InputJsonValue;
+}
+
+/**
+ * Where a disputed parcel was before the dispute: the open dispute's
+ * previousStatus, else the status it left when it became DISPUTED.
+ */
+async function statusBeforeDispute(
+  tx: Prisma.TransactionClient,
+  parcelId: string,
+): Promise<ParcelStatus | null> {
+  const dispute = await tx.dispute.findFirst({
+    where: { parcelId, status: "OPEN" },
+    orderBy: { createdAt: "desc" },
+    select: { previousStatus: true },
+  });
+  if (dispute) return dispute.previousStatus;
+  const event = await tx.parcelEvent.findFirst({
+    where: { parcelId, toStatus: "DISPUTED" },
+    orderBy: { createdAt: "desc" },
+    select: { fromStatus: true },
+  });
+  return event?.fromStatus ?? null;
 }
 
 function statusText(s: ParcelStatus): string {
