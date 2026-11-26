@@ -149,9 +149,9 @@ describe("service stubs", () => {
       A.RoadsideAction.response,
       await roadside.markMissed("p", "not_at_stop", "d"),
     );
-    valid(D.TrackingView, await tracking.trackingForLink(F.TRACKING_LINK));
-    expect(await tracking.trackingForLink("forged")).toBeNull();
-    valid(D.ParcelDetail, await tracking.parcelDetailFor("PT-7K3Q", "u"));
+    // tracking.trackingForLink and parcelDetailFor are real since Scope 07
+    // sl3 (need a database); their rules are tested in
+    // src/server/tracking/journey.test.ts and src/features/tracking/.
 
     valid(D.ArrivalsView, await arrival.arrivalsFor("park"));
     valid(D.ManifestView, await arrival.manifestFor(F.MANIFEST_TOKEN, "a"));

@@ -8,6 +8,7 @@ import type { DriverLoad } from "@/contracts/dto";
 import { db } from "@/lib/db";
 import { manifestToken } from "@/lib/ids";
 import { ParcelError, transition } from "@/server/parcels";
+import { pingParcelsLater } from "@/server/tracking/live";
 import { TripError } from "./errors";
 import { buildLoad, type LoadTripRow } from "./load";
 
@@ -188,6 +189,8 @@ export async function acceptLoad(
       throw e;
     }
   }
+  // Open tracking pages refresh (their timelines now say "Load accepted").
+  pingParcelsLater(assigned.map((a) => a.parcelId));
   return driverLoadFor(driverId);
 }
 
