@@ -211,13 +211,23 @@ async function send(
     },
   );
   if (answer.ok) {
+    const failed = refundState(answer.status) === "FAILED";
+    if (failed) {
+      console.warn(
+        `[payments] NEEDS REVIEW refund for ${parent.txnRef}: Interswitch says FAILED`,
+      );
+    }
     await record(
       refundId,
       {
         refundStatus: answer.status,
         providerRefundId: answer.providerId,
-        needsReview: false,
-        detail: undefined,
+        // Money hasn't gone back although the ledger says refunded: a
+        // person must finish it (Quickteller Business or another way).
+        needsReview: failed,
+        detail: failed
+          ? "Interswitch reported the refund as failed"
+          : undefined,
       },
       refundState(answer.status),
       null,

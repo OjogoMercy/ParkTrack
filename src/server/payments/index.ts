@@ -69,6 +69,11 @@ const FIRST_RECHECK_MINUTES = 10;
 const RECHECK_MINUTES = 5;
 
 const minutes = (n: number) => n * 60 * 1000;
+/**
+ * An open checkout younger than this is reused instead of a new one (20
+ * min): well inside Interswitch's 30, so the payer has time to finish.
+ */
+const CHECKOUT_REUSE_MINUTES = CHECKOUT_TTL_MINUTES - 10;
 
 /**
  * Creates the payment (amount computed here, never from the browser) and
@@ -121,6 +126,24 @@ export async function startPayment(
     if ("problem" in payable) {
       throw new PaymentError("payment_not_allowed", payable.problem, 409);
     }
+    // Paid but not applied yet (it keeps a re-check time until it is):
+    // paying again would charge twice.
+    const confirming = await tx.payment.findFirst({
+      where: {
+        parcelId,
+        purpose,
+        status: "VERIFIED",
+        nextRequeryAt: { not: null },
+      },
+      select: { id: true },
+    });
+    if (confirming) {
+      throw new PaymentError(
+        "payment_not_allowed",
+        "A payment for this is already being confirmed. Give it a minute, then check again.",
+        409,
+      );
+    }
 
     const open = await tx.payment.findFirst({
       where: {
@@ -128,7 +151,9 @@ export async function startPayment(
         purpose,
         status: "PENDING",
         createdAt: {
-          gt: new Date(now.getTime() - minutes(CHECKOUT_TTL_MINUTES)),
+          // Well inside Interswitch's 30 minutes: a checkout reused near the
+          // end could be settled as unpaid while the payer is still on it.
+          gt: new Date(now.getTime() - minutes(CHECKOUT_REUSE_MINUTES)),
         },
       },
       orderBy: { createdAt: "desc" },
@@ -196,7 +221,10 @@ export async function handleCallback(
   query: URLSearchParams,
 ): Promise<{ txnRef: string; status: PaymentStatusView["status"] }> {
   const ref = query.get("txnref") ?? query.get("txnRef") ?? "";
-  const view = await requery(ref);
+  // The payer just came back from Interswitch, so ask even about a payment
+  // already settled as failed (it may have been paid at the last moment).
+  // A settled failure only changes on a real answer (checkPayment).
+  const { view } = await checkPayment(ref, { reopenSettled: true });
   return { txnRef: view.txnRef, status: view.status };
 }
 
@@ -580,7 +608,15 @@ export async function paymentStatus(
     txnRef: payment.txnRef,
     purpose: payment.purpose,
     amountKobo: payment.amountKobo,
-    status: payment.status,
+    // Verified but not applied yet (it keeps a re-check time until it is):
+    // still confirming for the payer, so they aren't sent to a booking
+    // that isn't paid yet. The status poll then applies it.
+    status:
+      payment.status === "VERIFIED" &&
+      payment.purpose !== "REFUND" &&
+      payment.nextRequeryAt
+        ? "PENDING"
+        : payment.status,
     responseCode: payment.responseCode,
     reason:
       // Verified but not usable (already paid, cancelled, ...): why it
