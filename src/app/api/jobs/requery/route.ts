@@ -5,8 +5,13 @@ import {
   verifyQStash,
 } from "@/server/payments/qstash";
 
-/** Up to 20 payments, 4 at a time, each status check ≤ 15 s. */
-export const maxDuration = 60;
+/**
+ * Up to 20 payments, 4 at a time: 5 rounds of status checks (≤ 15 s each),
+ * and a refund re-send can take a token call (15 s) plus the request
+ * (20 s). Worst case is well over 60 s when Interswitch hangs, so allow the
+ * platform default of 300 s instead of being cut off mid-run.
+ */
+export const maxDuration = 300;
 
 const PATH = "/api/jobs/requery";
 

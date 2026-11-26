@@ -103,7 +103,8 @@ export { canSeeParcel, type ParcelTenancy } from "./tenancy";
  * (blanked in production). `channel` in the result is the one that
  * delivered it.
  *
- * Throws AuthError: invalid_phone, otp_resend_too_soon, otp_rate_limited.
+ * Throws AuthError: invalid_phone, otp_resend_too_soon, otp_rate_limited,
+ * code_not_sent.
  */
 export async function sendOtp(
   phone: string,
@@ -164,16 +165,24 @@ function codeSecret(): string {
 /**
  * Sends the code through @/server/notify (Scope 03): WhatsApp code template
  * or SMS with fallback in live mode, the server log in console mode (codes
- * blanked in production). Returns the channel that delivered it, or false
- * when nothing was delivered.
+ * blanked in production). Returns the channel that delivered it. Throws
+ * AuthError code_not_sent (503) when no channel delivered it, so the screen
+ * doesn't say "code sent" for a code that never left.
  */
 async function deliverCode(
   phone: string,
   code: string,
   channel: OtpChannel,
-): Promise<OtpChannel | false> {
-  const sent = await sendCode(phone, code, channel);
-  return sent.delivered ? sent.channel : false;
+): Promise<OtpChannel> {
+  const result = await sendCode(phone, code, channel);
+  if (!result.delivered) {
+    throw new AuthError(
+      "code_not_sent",
+      "We couldn't send your code just now. Try again in a moment.",
+      503,
+    );
+  }
+  return result.channel;
 }
 
 /**

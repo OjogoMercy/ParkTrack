@@ -43,6 +43,7 @@ import {
   type PayablePurpose,
   type Payer,
   GIVE_UP_HOURS,
+  paidBySender,
   nextCheckAt,
 } from "./rules";
 
@@ -434,7 +435,15 @@ async function checkPayment(
     const realAnswer =
       verdict.status === "VERIFIED" ||
       (verdict.status === "FAILED" && verdict.needsReview === true);
-    if (!settledFailure || realAnswer) {
+    if (unreachable && payment.status === "FAILED") {
+      // No answer this time: keep the decline (and its reason) the payer
+      // already saw, so the payment doesn't read "confirming" again and
+      // startPayment doesn't reuse its reference. Just ask again later.
+      await db.payment.updateMany({
+        where: { id: payment.id, status: "FAILED" },
+        data: { nextRequeryAt: nextCheckAt(payment.createdAt, new Date()) },
+      });
+    } else if (!settledFailure || realAnswer) {
       await recordVerdict(payment.id, verdict, answer, {
         replaced,
         startedAt: payment.createdAt,
@@ -615,6 +624,7 @@ async function sendReceipt(payment: {
   purpose: string;
   amountKobo: number;
   txnRef: string;
+  payerPhone: string | null;
 }): Promise<void> {
   if (payment.purpose === "SHIPPING") return;
   await notify("payment_receipt", payment.parcelId, {
@@ -622,12 +632,10 @@ async function sendReceipt(payment: {
     txnRef: payment.txnRef,
     receiptUrl: receiptUrl(payment.txnRef),
     purpose: payment.purpose,
-    // Who paid hears about it (contract/receipt-recipient): the recipient
-    // for pay on delivery and storage, the sender otherwise.
-    payer:
-      payment.purpose === "POD" || payment.purpose === "STORAGE"
-        ? "recipient"
-        : "sender",
+    // Who paid hears about it (contract/receipt-recipient). startPayment
+    // records payerPhone only for a signed-in payer (the sender), so a POD
+    // or storage payment the sender made for their recipient goes to them.
+    payer: paidBySender(payment) ? "sender" : "recipient",
   });
 }
 
@@ -822,12 +830,17 @@ async function markApplied(
   update: (tx: Prisma.TransactionClient) => Promise<{ count: number }>,
 ): Promise<boolean> {
   return db.$transaction(async (tx) => {
-    const { count } = await update(tx);
-    if (count !== 1) return false;
+    // Lock the payment and check it first: a payment applied earlier must
+    // never run its update again (an old top-up replayed through the
+    // callback would otherwise clear a newer top-up of the same amount).
+    await tx.$queryRaw`SELECT id FROM payments WHERE id = ${paymentId} FOR UPDATE`;
     const p = await tx.payment.findUniqueOrThrow({
       where: { id: paymentId },
       select: { rawResponse: true },
     });
+    if ((p.rawResponse as { applied?: boolean } | null)?.applied) return false;
+    const { count } = await update(tx);
+    if (count !== 1) return false;
     await tx.payment.update({
       where: { id: paymentId },
       data: {

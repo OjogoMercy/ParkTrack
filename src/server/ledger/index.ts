@@ -118,9 +118,24 @@ export async function settleParcel(
         })
       ).map((e) => e.paymentId),
     );
+    // Only payments that were applied to this parcel are split. A verified
+    // payment that wasn't (a duplicate checkout whose refund flag hasn't
+    // been set yet) stays in HELD for the refund, never paid out.
+    const paidEvent = await tx.parcelEvent.findFirst({
+      where: { parcelId, type: "PAID" },
+      orderBy: { createdAt: "asc" },
+      select: { meta: true },
+    });
+    const shippingPaidBy = (paidEvent?.meta as { paymentId?: string } | null)
+      ?.paymentId;
+    const applied = (p: (typeof payments)[number]) =>
+      p.purpose === "SHIPPING"
+        ? p.id === shippingPaidBy
+        : (p.rawResponse as { applied?: boolean } | null)?.applied === true;
     const due = payments.filter(
       (p) =>
         !released.has(p.id) &&
+        applied(p) &&
         // Flagged for a refund (duplicate, cancelled, ...): sl9 returns it.
         !(p.rawResponse as { needsRefund?: boolean } | null)?.needsRefund,
     );

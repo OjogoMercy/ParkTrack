@@ -5,6 +5,9 @@
  *      (the grant type goes in the body only; seen live in the sandbox).
  *   2. POST {apiBase}/paymentgateway/api/v1/refunds with Bearer token and
  *      { refundReference, parentPaymentId, refundType: "FULL" }.
+ *   3. GET {apiBase}/paymentgateway/api/v1/refunds?refundReference=… with
+ *      the same token: the refund's current refundStatus (an empty 200
+ *      body means Interswitch has no such refund).
  * Interswitch then settles it the next working day: PENDING / SUCCESS /
  * PROCESSING while in flight, COMPLETE or COMPLETE_MANUAL when done,
  * FAILED when final. Errors: 400 with code 10400 (refused, says why) or
@@ -143,6 +146,57 @@ export async function requestRefund(
       code: "network",
       description: e instanceof Error ? e.message : String(e),
       retryable: true,
+    };
+  }
+}
+
+export type RefundLookup =
+  | { ok: true; providerId: string | null; status: string }
+  | { ok: false; description: string };
+
+/**
+ * Asks Interswitch where a refund it accepted stands (by our refund
+ * reference). Never throws.
+ */
+export async function getRefund(
+  config: IswConfig,
+  creds: IswCredentials,
+  refundReference: string,
+  { fetchImpl = fetch }: { fetchImpl?: Fetch } = {},
+): Promise<RefundLookup> {
+  try {
+    const token = await passportToken(config, creds, { fetchImpl });
+    const url = new URL(`${config.apiBase}/paymentgateway/api/v1/refunds`);
+    url.searchParams.set("refundReference", refundReference);
+    const res = await fetchImpl(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(15_000),
+      cache: "no-store",
+    });
+    const body = (await res.json().catch(() => null)) as {
+      id?: number | string;
+      refundStatus?: string;
+    } | null;
+    if (res.ok && body?.refundStatus) {
+      return {
+        ok: true,
+        providerId: body.id != null ? String(body.id) : null,
+        status: body.refundStatus,
+      };
+    }
+    return {
+      ok: false,
+      description: res.ok
+        ? "Interswitch has no refund with this reference"
+        : `Refund status check failed (HTTP ${res.status})`,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      description: e instanceof Error ? e.message : String(e),
     };
   }
 }

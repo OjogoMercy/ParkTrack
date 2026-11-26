@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   itemName,
   nextCheckAt,
+  paidBySender,
   payableAmount,
   payerProblem,
   type ParcelForPayment,
@@ -159,5 +160,19 @@ describe("background re-check back-off (by age)", () => {
     expect(gap(120)).toBe(60);
     expect(gap(23 * 60)).toBe(60);
     expect(gap(24 * 60)).toBeNull();
+  });
+});
+
+describe("paidBySender", () => {
+  it("shipping and top-ups are always the sender's", () => {
+    expect(paidBySender({ purpose: "SHIPPING", payerPhone: null })).toBe(true);
+    expect(paidBySender({ purpose: "TOP_UP", payerPhone: null })).toBe(true);
+  });
+  it("POD and storage: the sender when signed in, else the recipient's link", () => {
+    expect(paidBySender({ purpose: "POD", payerPhone: "+2348035554471" })).toBe(
+      true,
+    );
+    expect(paidBySender({ purpose: "STORAGE", payerPhone: null })).toBe(false);
+    expect(paidBySender({ purpose: "POD", payerPhone: null })).toBe(false);
   });
 });

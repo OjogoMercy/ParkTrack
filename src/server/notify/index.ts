@@ -79,8 +79,8 @@ export async function notify(
 /**
  * One-off code message (sign-in OTP, SMS handshake code). Returns the
  * channel that delivered it (CONSOLE counts as the asked-for channel in
- * development) and whether anything was delivered at all. Never throws; a
- * failed send is logged.
+ * development) and whether any channel delivered it at all. Never throws;
+ * a failed send is logged and reported as delivered: false.
  */
 export async function sendCode(
   phone: string,
@@ -108,7 +108,7 @@ export async function sendCode(
     const used = ok?.channel;
     return {
       channel: used === "SMS" || used === "WHATSAPP" ? used : channel,
-      delivered: !!ok,
+      delivered: ok !== undefined,
     };
   } catch (e) {
     console.error("[notify] code message failed", e);

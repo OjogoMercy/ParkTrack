@@ -19,7 +19,8 @@ import { resolveHost } from "@/server/parks/host";
  * between codes on the same channel.
  *
  * Errors: 400 invalid_input / invalid_phone; 403 not_staff (console);
- * 429 otp_resend_too_soon / otp_rate_limited / rate_limited, each with
+ * 503 code_not_sent (no channel delivered the code; it doesn't count toward
+ * the limits); 429 otp_resend_too_soon / otp_rate_limited / rate_limited, each with
  * retryInSeconds and a Retry-After header.
  */
 export async function POST(request: Request): Promise<Response> {

@@ -53,8 +53,17 @@ export interface OtpStore {
   consume(id: string, now: Date): Promise<boolean>;
   /** When codes were issued for this phone since `since`, oldest first. */
   issuedSince(phone: string, since: Date): Promise<Date[]>;
-  /** Removes a code that was never delivered (it mustn't count or work). */
-  discard(id: string): Promise<void>;
+  /** Removes a code that was never delivered, so it doesn't count. */
+  remove(id: string): Promise<void>;
+  /**
+   * Runs `fn` while holding a per-phone lock, with a store bound to that
+   * lock, so parallel requests can't all pass the limits before any code
+   * exists. Optional: single-process stores (tests) don't need it.
+   */
+  withPhoneLock?<T>(
+    phone: string,
+    fn: (store: OtpStore) => Promise<T>,
+  ): Promise<T>;
 }
 
 export type IssueOtpInput = {
@@ -62,15 +71,12 @@ export type IssueOtpInput = {
   channel: OtpChannel;
   store: OtpStore;
   secret: string;
-  /**
-   * Sends the code; may return the channel that actually delivered it, or
-   * false when nothing was delivered (WhatsApp and SMS both failed).
-   */
+  /** Sends the code; may return the channel that actually delivered it. */
   deliver: (
     phone: string,
     code: string,
     channel: OtpChannel,
-  ) => Promise<OtpChannel | false | void>;
+  ) => Promise<OtpChannel | void>;
   now?: Date;
 };
 
@@ -89,6 +95,38 @@ export async function issueOtp({
   deliver,
   now = new Date(),
 }: IssueOtpInput): Promise<{ channel: OtpChannel; resendInSeconds: number }> {
+  const code = sixDigitCode();
+  // Check the limits and store the code under one per-phone lock: without
+  // it, parallel requests all see "no recent code" and each sends one.
+  const reserve = (s: OtpStore) =>
+    reserveCode(s, phone, channel, code, secret, now);
+  const row = store.withPhoneLock
+    ? await store.withPhoneLock(phone, reserve)
+    : await reserve(store);
+  // The channel that actually delivered it (SMS if WhatsApp fell back).
+  let delivered: OtpChannel | void;
+  try {
+    delivered = await deliver(phone, code, channel);
+  } catch (e) {
+    // Never delivered: it must not count toward the wait or the hourly limit.
+    await store
+      .remove(row.id)
+      .catch((err: unknown) =>
+        console.error("[auth] removing an undelivered code", err),
+      );
+    throw e;
+  }
+  return { channel: delivered ?? channel, resendInSeconds: OTP_RESEND_SECONDS };
+}
+
+async function reserveCode(
+  store: OtpStore,
+  phone: string,
+  channel: OtpChannel,
+  code: string,
+  secret: string,
+  now: Date,
+): Promise<OtpRow> {
   const last = await store.latest(phone);
   if (last && !last.consumedAt) {
     const waited = (now.getTime() - last.createdAt.getTime()) / 1000;
@@ -118,26 +156,12 @@ export async function issueOtp({
     );
   }
 
-  const code = sixDigitCode();
-  const row = await store.create({
+  return store.create({
     phone,
     codeHash: hashCode(code, phone, secret),
     channel,
     expiresAt: new Date(now.getTime() + OTP_TTL_SECONDS * 1000),
   });
-  // The channel that actually delivered it (SMS if WhatsApp fell back).
-  const delivered = await deliver(phone, code, channel);
-  if (delivered === false) {
-    // Nothing reached the phone: don't make them wait for it, and don't let
-    // it count towards the 5 codes an hour.
-    await store.discard(row.id);
-    throw new AuthError(
-      "otp_send_failed",
-      "We couldn’t send your code just now. Try again in a minute, or ask for it by SMS.",
-      503,
-    );
-  }
-  return { channel: delivered ?? channel, resendInSeconds: OTP_RESEND_SECONDS };
 }
 
 export type CheckOtpInput = {
