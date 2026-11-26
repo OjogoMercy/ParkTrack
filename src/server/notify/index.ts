@@ -72,13 +72,14 @@ export async function notify(
 /**
  * One-off code message (sign-in OTP, SMS handshake code). Returns the
  * channel that delivered it (CONSOLE counts as the asked-for channel in
- * development). Never throws; a failed send is logged.
+ * development) and whether any channel delivered it at all. Never throws;
+ * a failed send is logged and reported as delivered: false.
  */
 export async function sendCode(
   phone: string,
   code: string,
   channel: "WHATSAPP" | "SMS",
-): Promise<{ channel: "WHATSAPP" | "SMS" }> {
+): Promise<{ channel: "WHATSAPP" | "SMS"; delivered: boolean }> {
   try {
     const env = serverEnv();
     // Pidgin if this phone belongs to someone who chose it.
@@ -96,11 +97,15 @@ export async function sendCode(
       extra: { code },
     });
     await logAttempts(attempts, phone, "otp", null);
-    const used = attempts.find((a) => a.ok)?.channel;
-    return { channel: used === "SMS" || used === "WHATSAPP" ? used : channel };
+    const ok = attempts.find((a) => a.ok);
+    const used = ok?.channel;
+    return {
+      channel: used === "SMS" || used === "WHATSAPP" ? used : channel,
+      delivered: ok !== undefined,
+    };
   } catch (e) {
     console.error("[notify] code message failed", e);
-    return { channel };
+    return { channel, delivered: false };
   }
 }
 

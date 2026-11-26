@@ -53,6 +53,10 @@ function memoryStore(): OtpStore & { rows: OtpRow[] } {
         .filter((r) => r.phone === phone && r.createdAt > since)
         .map((r) => r.createdAt);
     },
+    async remove(id) {
+      const i = rows.findIndex((r) => r.id === id && !r.consumedAt);
+      if (i >= 0) rows.splice(i, 1);
+    },
   };
 }
 let currentNow = T0;
@@ -91,6 +95,58 @@ const check = (store: OtpStore, code: string, seconds: number) =>
   checkOtp({ phone: PHONE, code, store, secret: SECRET, now: at(seconds) });
 
 describe("issueOtp", () => {
+  it("a code no channel delivered doesn't count toward the limits", async () => {
+    const store = memoryStore();
+    currentNow = T0;
+    const failed = issueOtp({
+      phone: PHONE,
+      channel: "WHATSAPP",
+      store,
+      secret: SECRET,
+      deliver: async () => {
+        throw new AuthError("code_not_sent", "Couldn't send.", 503);
+      },
+      now: T0,
+    });
+    expect(await codeOf(failed)).toBe("code_not_sent");
+    expect(store.rows).toHaveLength(0);
+    // No 30-second wait after a code that never left.
+    await expect(send(store, 1)).resolves.toBeDefined();
+  });
+
+  it("checks the limits inside the store's per-phone lock", async () => {
+    const store = memoryStore();
+    let locked = 0;
+    let chain: Promise<unknown> = Promise.resolve();
+    store.withPhoneLock = (phone, fn) => {
+      expect(phone).toBe(PHONE);
+      // One holder at a time, like the advisory lock.
+      const run = chain.then(async () => {
+        locked++;
+        return fn(store);
+      });
+      chain = run.catch(() => {});
+      return run;
+    };
+    currentNow = T0;
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, () =>
+        issueOtp({
+          phone: PHONE,
+          channel: "WHATSAPP",
+          store,
+          secret: SECRET,
+          deliver: async () => {},
+          now: T0,
+        }),
+      ),
+    );
+    expect(locked).toBe(10);
+    // Parallel requests: one code, the rest wait 30 seconds.
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(store.rows).toHaveLength(1);
+  });
+
   it("sends a 6-digit code and stores only its hash", async () => {
     const store = memoryStore();
     const { result, code } = await send(store, 0);
