@@ -5,11 +5,13 @@
  * written in one transaction:
  *   HELD   −amount  "Refunded"              (the money leaves HELD)
  *   SENDER −amount  "Refund · expired booking" (P03's refund row; the
- *                   sender's account for their own payments, no account
- *                   id for a recipient's pay on delivery or storage)
+ *                   sender's account for payments the sender made, no
+ *                   account id for what the recipient paid by link)
  * Then Interswitch is asked to refund it (./refund-client.ts). If that
  * can't be done (no credentials, refused, sandbox without refunds), the
- * refund stays "refund pending" and is flagged for staff (Q15).
+ * refund stays "refund pending" and is flagged for staff (Q15). Once
+ * Interswitch accepts it, the background job asks for its status until
+ * it is COMPLETE or FAILED (a failed one is flagged for staff).
  *
  * Only money still held can be refunded here; once a parcel has settled,
  * a refund is a dispute (Scope 09).
@@ -21,10 +23,22 @@ import { serverEnv } from "@/lib/env";
 import { holdPayment } from "@/server/ledger";
 import { PaymentError } from "./errors";
 import { iswConfig, requeryTransaction } from "./interswitch";
-import { refundRefFor, refundState, requestRefund } from "./refund-client";
+import {
+  getRefund,
+  refundRefFor,
+  refundState,
+  requestRefund,
+} from "./refund-client";
+import { paidBySender } from "./rules";
 
 const RETRY_EVERY_MS = 30 * 60 * 1000;
 const RETRY_FOR_MS = 24 * 60 * 60 * 1000;
+/**
+ * A refund Interswitch accepted settles the next working day: its status is
+ * checked every 6 hours for a week, then staff take over.
+ */
+const STATUS_EVERY_MS = 6 * 60 * 60 * 1000;
+const STATUS_FOR_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type RefundOutcome = {
   started: boolean;
@@ -100,8 +114,9 @@ export async function refundPayment(
             rawResponse: raw as Prisma.InputJsonValue,
           },
         });
-        const sendersOwn =
-          parent.purpose === "SHIPPING" || parent.purpose === "TOP_UP";
+        // The refund belongs to whoever paid: the sender also for a POD or
+        // storage payment they made for their recipient.
+        const sendersOwn = paidBySender(parent);
         await tx.ledgerEntry.createMany({
           data: [
             {
@@ -211,10 +226,10 @@ async function send(
     },
   );
   if (answer.ok) {
-    const failed = refundState(answer.status) === "FAILED";
-    if (failed) {
+    const state = refundState(answer.status);
+    if (state === "FAILED") {
       console.warn(
-        `[payments] NEEDS REVIEW refund for ${parent.txnRef}: Interswitch says FAILED`,
+        `[payments] refund for ${parent.txnRef} failed at Interswitch: ${answer.status}`,
       );
     }
     await record(
@@ -222,15 +237,13 @@ async function send(
       {
         refundStatus: answer.status,
         providerRefundId: answer.providerId,
-        // Money hasn't gone back although the ledger says refunded: a
-        // person must finish it (Quickteller Business or another way).
-        needsReview: failed,
-        detail: failed
-          ? "Interswitch reported the refund as failed"
-          : undefined,
+        needsReview: state === "FAILED",
+        detail:
+          state === "FAILED" ? "Interswitch failed the refund" : undefined,
       },
-      refundState(answer.status),
-      null,
+      state,
+      // Accepted but not settled yet: the job checks on it until it is.
+      state === "PENDING" ? new Date(Date.now() + STATUS_EVERY_MS) : null,
     );
     return answer.status;
   }
@@ -268,14 +281,16 @@ async function record(
 }
 
 /**
- * Re-sends a refund Interswitch couldn't take yet (called by the
- * background job for refund rows that are due). Returns its status.
+ * Called by the background job for refund rows that are due: re-sends a
+ * refund Interswitch couldn't take yet, or asks where an accepted one
+ * stands. Returns its status.
  */
 export async function resendRefund(refundId: string): Promise<string> {
   const row = await db.payment.findUnique({ where: { id: refundId } });
   if (!row || row.purpose !== "REFUND") return "not_a_refund";
   const raw = (row.rawResponse ?? {}) as RefundRaw;
   if (raw.refundStatus !== "NOT_SENT") {
+    if (row.status === "PENDING") return checkRefund(row);
     await db.payment.update({
       where: { id: refundId },
       data: { nextRequeryAt: null },
@@ -286,6 +301,85 @@ export async function resendRefund(refundId: string): Promise<string> {
     where: { id: raw.parentPaymentId },
   });
   return send(refundId, parent);
+}
+
+/**
+ * Asks Interswitch about a refund it accepted. COMPLETE → VERIFIED,
+ * FAILED → FAILED and flagged for staff; still in flight → asked again in
+ * 6 hours, for a week, then flagged for staff.
+ */
+async function checkRefund(row: {
+  id: string;
+  txnRef: string;
+  createdAt: Date;
+  rawResponse: unknown;
+}): Promise<string> {
+  const env = serverEnv();
+  const raw = (row.rawResponse ?? {}) as RefundRaw;
+  const keepChecking = Date.now() - row.createdAt.getTime() < STATUS_FOR_MS;
+  const next = keepChecking ? new Date(Date.now() + STATUS_EVERY_MS) : null;
+  let config;
+  try {
+    if (!env.ISW_CLIENT_ID || !env.ISW_SECRET) {
+      throw new Error("ISW_CLIENT_ID / ISW_SECRET aren't set");
+    }
+    config = iswConfig(env);
+  } catch (e) {
+    await record(
+      row.id,
+      {
+        needsReview: true,
+        detail: e instanceof Error ? e.message : String(e),
+      },
+      undefined,
+      null,
+    );
+    return raw.refundStatus;
+  }
+  const answer = await getRefund(
+    config,
+    { clientId: env.ISW_CLIENT_ID, secret: env.ISW_SECRET },
+    row.txnRef,
+  );
+  if (!answer.ok) {
+    await record(
+      row.id,
+      keepChecking
+        ? {}
+        : {
+            needsReview: true,
+            detail: `Refund still unconfirmed after a week: ${answer.description}`,
+          },
+      undefined,
+      next,
+    );
+    return raw.refundStatus;
+  }
+  const state = refundState(answer.status);
+  const gaveUp = state === "PENDING" && !keepChecking;
+  if (state === "FAILED") {
+    console.warn(
+      `[payments] refund ${row.txnRef} failed at Interswitch: ${answer.status}`,
+    );
+  }
+  await record(
+    row.id,
+    {
+      refundStatus: answer.status,
+      ...(answer.providerId ? { providerRefundId: answer.providerId } : {}),
+      ...(state === "FAILED"
+        ? { needsReview: true, detail: "Interswitch failed the refund" }
+        : gaveUp
+          ? {
+              needsReview: true,
+              detail: `Refund still ${answer.status} after a week`,
+            }
+          : {}),
+    },
+    state,
+    state === "PENDING" ? next : null,
+  );
+  return answer.status;
 }
 
 /**
