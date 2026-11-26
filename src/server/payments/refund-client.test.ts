@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { iswConfig } from "./interswitch";
 import {
   clearTokenCache,
+  getRefund,
   passportToken,
   refundRefFor,
   refundState,
@@ -148,5 +149,47 @@ describe("refund request", () => {
     expect(refundState("COMPLETE_MANUAL")).toBe("VERIFIED");
     expect(refundState("FAILED")).toBe("FAILED");
     expect(refundRefFor("ISW-PT-8F3KQ2XA")).toBe("ISW-RF-8F3KQ2XA");
+  });
+});
+
+describe("refund status", () => {
+  it("GET by our refund reference with the Passport token", async () => {
+    const f = fakeFetch(
+      token(),
+      Response.json({
+        id: 12,
+        refundReference: "ISW-RF-PPZG8HEM",
+        refundStatus: "COMPLETE",
+      }),
+    );
+    const answer = await getRefund(config, creds, "ISW-RF-PPZG8HEM", {
+      fetchImpl: f.impl,
+    });
+    expect(answer).toEqual({ ok: true, providerId: "12", status: "COMPLETE" });
+    const [url, init] = f.calls[1];
+    expect(url).toBe(
+      "https://sandbox.interswitchng.com/paymentgateway/api/v1/refunds?refundReference=ISW-RF-PPZG8HEM",
+    );
+    expect((init?.headers as Record<string, string>).Authorization).toBe(
+      "Bearer tok",
+    );
+  });
+
+  it("an empty 200 means Interswitch has no such refund", async () => {
+    const f = fakeFetch(token(), new Response("", { status: 200 }));
+    const answer = await getRefund(config, creds, "ISW-RF-X", {
+      fetchImpl: f.impl,
+    });
+    expect(answer.ok).toBe(false);
+  });
+
+  it("never throws on a network error", async () => {
+    const impl = vi.fn(async () => {
+      throw new Error("timeout");
+    }) as unknown as typeof fetch;
+    const answer = await getRefund(config, creds, "ISW-RF-X", {
+      fetchImpl: impl,
+    });
+    expect(answer).toEqual({ ok: false, description: "timeout" });
   });
 });

@@ -98,6 +98,22 @@ export function payerProblem(
   return isSender ? null : "Use the link sent to the recipient to pay this.";
 }
 
+/**
+ * True when the signed-in sender (or the agent who booked for them) paid,
+ * false when the recipient paid through their tracking link. startPayment
+ * records payerPhone only for a signed-in payer, so this decides who gets
+ * the receipt and whose ledger a refund belongs to.
+ */
+export function paidBySender(payment: {
+  purpose: string;
+  payerPhone: string | null;
+}): boolean {
+  if (payment.purpose === "SHIPPING" || payment.purpose === "TOP_UP") {
+    return true;
+  }
+  return payment.payerPhone !== null;
+}
+
 /** Shown on the Interswitch page. */
 export function itemName(purpose: PayablePurpose, parcelCode: string): string {
   const what = {
