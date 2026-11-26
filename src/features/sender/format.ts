@@ -96,12 +96,28 @@ export function draftExpired(
   );
 }
 
-/** Where an S08 row goes: pay it, show its QR, or follow it (Scope 07). */
-export function parcelRowHref(p: {
-  parcelCode: string;
-  status: string;
-}): string {
-  if (p.status === "DRAFT") return `/send/review?parcel=${p.parcelCode}`;
-  if (p.status === "AWAITING_DROPOFF") return `/parcels/booked/${p.parcelCode}`;
+/**
+ * Where an S08 row goes: pay it, show its QR, or follow it (Scope 07).
+ * Paying and the booking QR live on the park the booking was made at, so a
+ * booking from another park links to that park's subdomain (`site` builds
+ * the absolute URL); the rest stay on this site.
+ */
+export function parcelRowHref(
+  p: { parcelCode: string; status: string; originPark?: { slug: string } },
+  where?: {
+    currentSlug: string;
+    site: (slug: string, path: string) => string;
+  },
+): string {
+  const atOrigin = (path: string) =>
+    where && p.originPark && p.originPark.slug !== where.currentSlug
+      ? where.site(p.originPark.slug, path)
+      : path;
+  if (p.status === "DRAFT") {
+    return atOrigin(`/send/review?parcel=${p.parcelCode}`);
+  }
+  if (p.status === "AWAITING_DROPOFF") {
+    return atOrigin(`/parcels/booked/${p.parcelCode}`);
+  }
   return `/parcels/${p.parcelCode}`;
 }

@@ -54,3 +54,10 @@ describe("unpaid drafts", () => {
     ).toBe(false);
   });
 });
+
+describe("declared value", () => {
+  it("the cap fits the parcels table (32-bit integer kobo)", async () => {
+    const { MAX_DECLARED_VALUE_KOBO } = await import("@/server/booking");
+    expect(MAX_DECLARED_VALUE_KOBO).toBeLessThanOrEqual(2_147_483_647);
+  });
+});

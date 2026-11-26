@@ -2,7 +2,7 @@
 
 import { Info } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { BookingInput } from "@/contracts/api";
 import type { BySize, Quote } from "@/contracts/dto";
 import {
@@ -55,7 +55,14 @@ export type BookingRecipient = {
   preferredPointId: string | null;
 };
 
+/** Same cap as the booking service (₦20,000,000). */
+const MAX_DECLARED_VALUE_KOBO = 2_000_000_000;
+
 const SIZES: SizeClass[] = ["S", "M", "L"];
+
+/** For event handlers only (reusing the booking Review just created). */
+const now = () => Date.now();
+const isRecent = (at: number) => now() - at < 30 * 60 * 1000;
 const NEW = "new";
 
 /** "45,000" → 4_500_000 kobo; null when it isn't a whole naira amount. */
@@ -109,6 +116,11 @@ export function BookingForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  // The booking Review last created, and for which details. Coming back
+  // from S04 and pressing Review again opens it instead of making another.
+  const created = useRef<{ key: string; code: string; at: number } | null>(
+    null,
+  );
   const [formError, setFormError] = useState<string | null>(null);
 
   const route = routes.find((r) => r.id === routeId) ?? routes[0];
@@ -157,6 +169,8 @@ export function BookingForm({
     const declaredKobo = nairaToKobo(declared);
     if (declaredKobo === null || declaredKobo <= 0) {
       found.declaredValueKobo = "Enter what it’s worth in naira, e.g. 45,000";
+    } else if (declaredKobo > MAX_DECLARED_VALUE_KOBO) {
+      found.declaredValueKobo = `Declared value can be up to ${formatNaira(MAX_DECLARED_VALUE_KOBO)}`;
     }
     const podKobo = pod ? nairaToKobo(podAmount) : 0;
     if (pod && (podKobo === null || podKobo <= 0)) {
@@ -198,6 +212,15 @@ export function BookingForm({
       return;
     }
 
+    const key = JSON.stringify(parsed.data);
+    const reviewUrl = (code: string) =>
+      `/send/review?parcel=${encodeURIComponent(code)}`;
+    // Reused for a short while only: an old draft may have expired or been paid.
+    if (created.current?.key === key && isRecent(created.current.at)) {
+      router.push(reviewUrl(created.current.code));
+      return;
+    }
+
     // Create the unpaid booking, then review and pay it (S04).
     setBusy(true);
     try {
@@ -211,10 +234,11 @@ export function BookingForm({
         error?: { message?: string; fields?: Record<string, string> };
       } | null;
       if (res.ok && json?.parcel) {
-        router.push(
-          `/send/review?parcel=${encodeURIComponent(json.parcel.parcelCode)}`,
-        );
-        return; // stay busy while the review page loads
+        created.current = { key, code: json.parcel.parcelCode, at: now() };
+        // Not left busy: this form stays alive behind S04 (back keeps it).
+        setBusy(false);
+        router.push(reviewUrl(json.parcel.parcelCode));
+        return;
       }
       if (res.status === 401) {
         router.push(`/signin?next=${encodeURIComponent("/send")}`);

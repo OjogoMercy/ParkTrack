@@ -55,10 +55,14 @@ async function Account({ params }: { params: Promise<{ park: string }> }) {
     bookingLimits(),
   ]);
 
-  // "Where they usually collect": the parks this park sends to, and the
-  // roadside points on the way.
+  // "Where they usually collect": the live parks this park sends to, and
+  // the roadside points on the way (a paused park isn't offered).
+  const routes = park?.routes ?? [];
+  const destinations = await Promise.all(
+    routes.map((r) => getPark(r.destination.slug)),
+  );
   const options: CollectOption[] = [];
-  for (const r of park?.routes ?? []) {
+  for (const r of routes.filter((_, i) => destinations[i])) {
     options.push({
       value: `park:${r.destination.id}`,
       label: `Collect at ${parkDisplayName(r.destination)}`,

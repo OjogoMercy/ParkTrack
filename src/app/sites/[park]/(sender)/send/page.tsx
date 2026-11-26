@@ -124,22 +124,38 @@ async function Send({
     Promise.all(park.routes.map((r) => getPark(r.destination.slug))),
   ]);
 
-  const routes: BookingRoute[] = park.routes.map((r, i) => ({
-    id: r.id,
-    destinationParkId: r.destination.id,
-    label: destinationLabel(r.destination),
-    destinationName: r.destination.name,
-    fareKobo: r.fareKobo,
-    points: r.roadsidePoints.map((p) => ({ id: p.id, name: p.name })),
-    storage: {
-      windowHours: destinations[i]?.storage.windowHours ?? 24,
-      dailyRateKobo: destinations[i]?.storage.dailyRateKobo ?? {
-        S: 30_000,
-        M: 30_000,
-        L: 30_000,
+  // Only routes that can be booked now: the destination park is live and
+  // the route quotes (a paused park never breaks booking elsewhere).
+  const routes: BookingRoute[] = park.routes.flatMap((r, i) => {
+    const destination = destinations[i];
+    if (!destination || !estimates[r.id]) return [];
+    return [
+      {
+        id: r.id,
+        destinationParkId: r.destination.id,
+        label: destinationLabel(r.destination),
+        destinationName: r.destination.name,
+        fareKobo: r.fareKobo,
+        points: r.roadsidePoints.map((p) => ({ id: p.id, name: p.name })),
+        storage: {
+          windowHours: destination.storage.windowHours,
+          dailyRateKobo: destination.storage.dailyRateKobo,
+        },
       },
-    },
-  }));
+    ];
+  });
+  if (routes.length === 0) {
+    return (
+      <MobileShell topBar={topBar} className="p-4">
+        <Card className="flex flex-col gap-1 p-4">
+          <h1 className="text-heading">No routes running right now</h1>
+          <p className="text-sub text-fg-2">
+            {park.name} can’t send to any park at the moment. Check back soon.
+          </p>
+        </Card>
+      </MobileShell>
+    );
+  }
   const recipients: BookingRecipient[] = saved.map((r) => ({
     id: r.id,
     name: r.name,

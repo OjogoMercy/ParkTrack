@@ -85,3 +85,23 @@ describe("S08 rows", () => {
     );
   });
 });
+
+describe("S08 rows for bookings made at another park", () => {
+  const where = {
+    currentSlug: "ogbomoso",
+    site: (slug: string, path: string) => `https://${slug}.parktrack.ng${path}`,
+  };
+  it("pay and the QR open on the park the booking was made at", () => {
+    const other = { parcelCode: "PT-7K3Q", originPark: { slug: "ibadan" } };
+    expect(parcelRowHref({ ...other, status: "DRAFT" }, where)).toBe(
+      "https://ibadan.parktrack.ng/send/review?parcel=PT-7K3Q",
+    );
+    expect(parcelRowHref({ ...other, status: "AWAITING_DROPOFF" }, where)).toBe(
+      "https://ibadan.parktrack.ng/parcels/booked/PT-7K3Q",
+    );
+    const here = { parcelCode: "PT-7K3Q", originPark: { slug: "ogbomoso" } };
+    expect(parcelRowHref({ ...here, status: "DRAFT" }, where)).toBe(
+      "/send/review?parcel=PT-7K3Q",
+    );
+  });
+});

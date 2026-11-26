@@ -75,6 +75,16 @@ async function ParkHomeContent({
         </p>
       </div>
 
+      {park.routes.length > 0 &&
+      estimates &&
+      Object.keys(estimates).length === 0 ? (
+        <Card className="flex flex-col gap-1 p-4">
+          <h2 className="text-heading">No routes running right now</h2>
+          <p className="text-sub text-fg-2">
+            {park.name} can’t send to any park at the moment. Check back soon.
+          </p>
+        </Card>
+      ) : null}
       {park.routes.length === 0 ? (
         <Card className="flex flex-col gap-1 p-4">
           <h2 className="text-heading">No routes yet</h2>
@@ -84,16 +94,21 @@ async function ParkHomeContent({
         </Card>
       ) : (
         <>
-          {estimates ? (
+          {estimates && Object.keys(estimates).length ? (
             <QuickQuote
-              routes={park.routes.map((r) => ({
-                id: r.id,
-                label: destinationLabel(r.destination),
-              }))}
+              routes={park.routes
+                .filter((r) => estimates?.[r.id])
+                .map((r) => ({
+                  id: r.id,
+                  label: destinationLabel(r.destination),
+                }))}
               estimates={estimates}
             />
           ) : null}
-          <Routes park={park} />
+          <Routes
+            park={park}
+            bookable={estimates ? Object.keys(estimates) : null}
+          />
         </>
       )}
 
@@ -109,12 +124,23 @@ async function ParkHomeContent({
   );
 }
 
-function Routes({ park }: { park: ParkRecord }) {
+function Routes({
+  park,
+  bookable,
+}: {
+  park: ParkRecord;
+  /** Route ids that can be booked now; null when that couldn't be worked out. */
+  bookable: string[] | null;
+}) {
+  const routes = bookable
+    ? park.routes.filter((r) => bookable.includes(r.id))
+    : park.routes;
+  if (!routes.length) return null;
   return (
     <Section title="Routes from this park">
       <Card>
         <List>
-          {park.routes.map((r) => {
+          {routes.map((r) => {
             const from = Math.min(r.fareKobo.S, r.fareKobo.M, r.fareKobo.L);
             const stops = r.roadsidePoints.map((p) => p.name).join(", ");
             return (

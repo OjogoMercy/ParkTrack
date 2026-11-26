@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { BottomBar, MobileShell, TopBar } from "@/components/ui/shells";
 import { Card, Divider, KeyValue, Notice } from "@/components/ui/surface";
+import { BackButton } from "@/features/sender/back-button";
 import { PayButton } from "@/features/sender/pay-button";
 import { formatNaira } from "@/lib/money";
 import { formatPhone } from "@/lib/phone";
@@ -58,7 +59,12 @@ async function Review({
       `/signin?next=${encodeURIComponent(`/send/review?parcel=${code}`)}`,
     );
   }
-  const topBar = <TopBar title="Review and pay" backHref="/send" />;
+  const topBar = (
+    <TopBar
+      title="Review and pay"
+      leading={<BackButton fallback="/parcels?tab=drafts" />}
+    />
+  );
 
   const draft = code ? await draftForReview(user.id, slug, code) : null;
   if (!draft) {

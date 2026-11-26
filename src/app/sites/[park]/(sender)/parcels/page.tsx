@@ -24,6 +24,8 @@ import { formatNaira } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { getSession } from "@/server/auth";
 import { listMyParcels, myParcelCounts } from "@/server/booking";
+import { serverEnv } from "@/lib/env";
+import { siteUrl } from "@/server/notify/links";
 import { getPark } from "@/server/parks";
 
 export const metadata: Metadata = { title: "My parcels" };
@@ -87,6 +89,11 @@ async function Parcels({
   if (!park) return null; // the layout shows "park not found"
   const now = new Date();
   const fmt = { day: formatDay, dayTime: formatDayTime };
+  const where = {
+    currentSlug: slug,
+    site: (parkSlug: string, path: string) =>
+      siteUrl(serverEnv().ROOT_DOMAIN, parkSlug, path),
+  };
 
   return (
     <MobileShell
@@ -152,14 +159,19 @@ async function Parcels({
       </nav>
 
       {list.parcels.length ? (
-        <Rows parcels={list.parcels} fmt={fmt} now={now} />
+        <Rows parcels={list.parcels} fmt={fmt} now={now} where={where} />
       ) : (
         <Empty tab={tab} />
       )}
 
       {recent && recent.parcels.length ? (
         <Section title="Recently delivered" className="pt-2">
-          <Rows parcels={recent.parcels.slice(0, 3)} fmt={fmt} now={now} />
+          <Rows
+            parcels={recent.parcels.slice(0, 3)}
+            fmt={fmt}
+            now={now}
+            where={where}
+          />
         </Section>
       ) : null}
     </MobileShell>
@@ -170,8 +182,10 @@ function Rows({
   parcels,
   fmt,
   now,
+  where,
 }: {
   parcels: ParcelSummary[];
+  where: Parameters<typeof parcelRowHref>[1];
   fmt: { day: (d: Date) => string; dayTime: (d: Date) => string };
   now: Date;
 }) {
@@ -181,7 +195,7 @@ function Rows({
         {parcels.map((p) => (
           <ListRow
             key={p.id}
-            href={parcelRowHref(p)}
+            href={parcelRowHref(p, where)}
             title={p.recipientName}
             sub={
               <>

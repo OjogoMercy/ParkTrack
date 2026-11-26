@@ -10,12 +10,18 @@ import type { ParcelSummary, Quote, VendorTotals } from "@/contracts/dto";
 import { SIZE_CLASSES, SIZE_LABELS, type SizeClass } from "@/contracts/enums";
 import { db } from "@/lib/db";
 import type { ParcelStatus } from "@/contracts/enums";
-import { createDraft, quote } from "@/server/parcels";
+import { createDraft, ParcelError, quote } from "@/server/parcels";
 import { summaryInclude, toParcelSummary } from "@/server/parcels/summary";
 import { createRecipient, RecipientError } from "@/server/recipients";
 import { parkCacheTag } from "@/server/parks";
 
 export const STUB = false;
+
+/**
+ * Highest declared value a booking takes (₦20,000,000): well above what the
+ * pilot carries, and inside what the parcels table stores.
+ */
+export const MAX_DECLARED_VALUE_KOBO = 2_000_000_000;
 
 export type BookingContext = {
   originParkId: string;
@@ -36,6 +42,16 @@ export async function createBooking(
   input: BookingInput,
   ctx: BookingContext,
 ): Promise<{ parcel: ParcelSummary; quote: Quote }> {
+  if (input.declaredValueKobo > MAX_DECLARED_VALUE_KOBO) {
+    throw new ParcelError(
+      "invalid_booking",
+      "Check the booking details.",
+      400,
+      {
+        declaredValueKobo: `Declared value can be up to ₦${(MAX_DECLARED_VALUE_KOBO / 100).toLocaleString("en-NG")}`,
+      },
+    );
+  }
   const parcel = await createDraft({ ...input, ...ctx });
 
   if (input.saveRecipient && ctx.createdBy === "SENDER" && ctx.senderId) {
@@ -274,6 +290,8 @@ async function vendorTotals(userId: string): Promise<VendorTotals | null> {
 export type ParkEstimates = Record<string, Record<SizeClass, Quote>>;
 
 /**
+ * Routes that can't be booked right now are left out (callers treat a
+ * missing route as not bookable).
  * S01 quick estimator: the real quote (fare by size + service fee, BOOK-4)
  * for every route and size of a park, so switching destination or size
  * updates the total instantly. Cached with the park (fares change through
@@ -289,11 +307,17 @@ export async function parkEstimates(
   cacheTag(parkCacheTag(slug));
   const out: ParkEstimates = {};
   for (const routeId of routeIds) {
-    const bySize = {} as Record<SizeClass, Quote>;
-    for (const size of SIZE_CLASSES) {
-      bySize[size] = await quote({ routeId, size, podKobo: 0 });
+    try {
+      const bySize = {} as Record<SizeClass, Quote>;
+      for (const size of SIZE_CLASSES) {
+        bySize[size] = await quote({ routeId, size, podKobo: 0 });
+      }
+      out[routeId] = bySize;
+    } catch (e) {
+      // Not bookable right now (destination park paused, route off): the
+      // route is left out; the rest of the park still books.
+      if (!(e instanceof ParcelError)) throw e;
     }
-    out[routeId] = bySize;
   }
   return out;
 }
