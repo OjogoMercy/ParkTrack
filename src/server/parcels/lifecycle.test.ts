@@ -40,7 +40,13 @@ function rightUser(actor: Actor, from: ParcelStatus, to: ParcelStatus) {
       : actor === "DRIVER"
         ? "u_driver"
         : `u_${actor}`;
-  return { id, role: actor, status: "ACTIVE", parkId };
+  // SENDER is a relationship; the person is an ordinary USER account.
+  return {
+    id,
+    role: actor === "SENDER" ? "USER" : actor,
+    status: "ACTIVE",
+    parkId,
+  };
 }
 
 describe("state table: every pair of statuses", () => {
@@ -177,7 +183,7 @@ describe("who may act", () => {
   it("only the parcel's own sender can cancel it", () => {
     const stranger = {
       id: "u_stranger",
-      role: "SENDER",
+      role: "USER",
       status: "ACTIVE",
       parkId: null,
     };
@@ -191,10 +197,27 @@ describe("who may act", () => {
     ).toMatch(/Only the sender/);
   });
 
+  it("anyone who booked the parcel acts as its sender, whatever their role", () => {
+    const agentWhoBooked = {
+      id: "u_sender",
+      role: "AGENT",
+      status: "ACTIVE",
+      parkId: ORIGIN,
+    };
+    expect(
+      actorProblem({
+        transition: cancel,
+        actor: "SENDER",
+        user: agentWhoBooked,
+        parcel,
+      }),
+    ).toBeNull();
+  });
+
   it("people must act as their own active role", () => {
     const sender = {
       id: "u_sender",
-      role: "SENDER",
+      role: "USER",
       status: "ACTIVE",
       parkId: null,
     };

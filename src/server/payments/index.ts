@@ -172,7 +172,7 @@ export async function startPayment(
   const form = checkoutForm(config, {
     txnRef: payment.txnRef,
     amountKobo: payment.amountKobo,
-    redirectUrl: siteUrl(env.ROOT_DOMAIN, null, "/api/payments/callback"),
+    redirectUrl: siteUrl(env.ROOT_DOMAIN, "/api/payments/callback"),
     customer: {
       id: parcel.senderId ?? `parcel-${parcel.id}`,
       name: parcel.sender?.name ?? null,
@@ -564,7 +564,7 @@ export async function paymentStatus(
     where: { txnRef },
     include: {
       parcel: {
-        select: { parcelCode: true, originPark: { select: { slug: true } } },
+        select: { parcelCode: true },
       },
     },
   });
@@ -579,12 +579,8 @@ export async function paymentStatus(
   const root = serverEnv().ROOT_DOMAIN;
   const returnTo =
     payment.purpose === "SHIPPING" || payment.purpose === "TOP_UP"
-      ? siteUrl(
-          root,
-          payment.parcel.originPark.slug,
-          `/parcels/booked/${payment.parcel.parcelCode}`,
-        )
-      : siteUrl(root, null, "/");
+      ? siteUrl(root, `/parcels/booked/${payment.parcel.parcelCode}`)
+      : siteUrl(root, "/");
   return {
     txnRef: payment.txnRef,
     purpose: payment.purpose,
@@ -643,7 +639,6 @@ async function sendReceipt(payment: {
 export function receiptUrl(txnRef: string): string {
   return siteUrl(
     serverEnv().ROOT_DOMAIN,
-    null,
     `/pay/${encodeURIComponent(txnRef)}/receipt`,
   );
 }

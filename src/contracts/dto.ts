@@ -130,7 +130,7 @@ export const SessionUser = z.object({
   role: Role,
   /** Park an agent/driver/park admin belongs to. */
   park: nullable(ParkRef),
-  /** Park whose subdomain a sender first signed up on (AUTH-3). */
+  /** No longer set (one domain, Q45); kept for accounts made before. */
   signupPark: nullable(ParkRef),
   isVendor: z.boolean(),
 });
@@ -165,7 +165,7 @@ export type SavedRecipientDto = z.infer<typeof SavedRecipientDto>;
 
 // ─── Parks ──────────────────────────────────────────────────────────────────
 
-/** Public park page data, resolved from the subdomain (S01, PARK-1). */
+/** Public park page data, looked up by slug (S01, PARK-1). */
 export const ParkPublic = z.object({
   id: Id,
   slug: ParkSlug,

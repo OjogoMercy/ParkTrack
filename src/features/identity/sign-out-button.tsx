@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
-/** Signs out on every subdomain (POST /api/auth/signout), then reloads. */
+/** Signs out (POST /api/auth/signout), then reloads. */
 export function SignOutButton({ label = "Sign out" }: { label?: string }) {
   const [busy, setBusy] = useState(false);
   return (

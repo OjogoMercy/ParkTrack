@@ -8,6 +8,8 @@
 | Design source | Park and platform admin **P01** overview, **P02** parcels with detail panel, **P03** ledger and settlement, **P04** agents and drivers, **P05** routes, fares and storage rules, **P06** counter QR poster (A4), **P07** platform admin: parks, payments, health |
 | PRD | PARK-1 (admin edit), PARK-4, AUTH-6, DASH-4, DASH-5, DRV-5, BOOK-7, PAY-6 trigger, §6.5 (expiry, unclaimed, storage reminders), DIS-1/DIS-2 (P1), §14 PWA + hosting, §16 demo, §17 feature-freeze tasks |
 
+> **One domain since [Q45](../reference/open-questions.md):** routes below are on `parktrack.ng`; there are no park subdomains and no `app.` host. Console routes keep their `/console/…` paths.
+
 ## Goal
 
 Park admins run their park (routes, fares, storage rules, team, counter poster) and see volumes and money; platform admins see all parks, payments and system health. Scheduled jobs handle time-based rules. Then ship: PWA for agents/drivers, wildcard domain on Vercel, Sentry, demo seed and rehearsal.
@@ -26,7 +28,7 @@ PWA (Serwist) setup, manifest, icons; vercel.json; Sentry config files; scripts/
 docs/demo-checklist.md
 ```
 
-## Routes (`app.parktrack.ng`)
+## Routes (`parktrack.ng`)
 
 | Route | Screen |
 |---|---|
@@ -55,7 +57,7 @@ docs/demo-checklist.md
 | sl1 | P0 | Console admin shell (sidebar from P01) + role routing for `park_admin` / `platform_admin` | Adewale lands on `/console/park` |
 | sl2 | P0 | P03 ledger view from `@/server/ledger` (park-scoped) + CSV | After a demo run, P03 shows vendor, driver, park, platform credits (demo 3:55–4:20) |
 | sl3 | P0 | P05 routes/fares/storage settings editing + counter QR token; P06 printable poster | Changing Medium fare changes S01/S03 quote; poster QR opens `/collect/{token}` |
-| sl4 | P0 | **Deploy**: Vercel project, `*.parktrack.ng` wildcard with Vercel nameservers, env vars, Supabase prod project, migrations + seed; Sentry | `ogbomoso.parktrack.ng`, `ibadan.parktrack.ng`, `app.parktrack.ng` live over HTTPS |
+| sl4 | P0 | **Deploy**: Vercel project, `parktrack.ng` (plus the old `*.parktrack.ng` wildcard only if old links must keep redirecting), env vars, Supabase prod project, migrations + seed; Sentry | `parktrack.ng`, `parktrack.ng/parks/ogbomoso` and `parktrack.ng/console` live over HTTPS |
 | sl5 | P0 | PWA (Serwist) for `/console/*` (installable agent/driver app, icons, offline shell only) | "Add to home screen" works on Android Chrome |
 | sl6 | P0 | Demo kit: `scripts/seed-demo.ts` (demo users, phones of team + judge slots, fresh parcels), `scripts/reset-demo.ts`, `docs/demo-checklist.md` (phones, sandbox cards, poster printed, backup video, Wi-Fi fallback) | Reset + full demo run twice in a row without manual fixes |
 | sl7 | P1 | P01 overview + Needs attention + live trips; P02 parcels table + detail panel | KPIs match DB counts |

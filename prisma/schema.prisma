@@ -22,9 +22,11 @@ datasource db {
 
 // ─── Enums ──────────────────────────────────────────────────────────────────
 
-/// A vendor is a SENDER with a VendorProfile, not a separate role.
+/// Every person is a USER; sending or receiving is what they do with a
+/// parcel, not a role. A vendor is a USER with a VendorProfile. Staff roles
+/// belong to one park.
 enum Role {
-  SENDER
+  USER
   AGENT
   DRIVER
   PARK_ADMIN
@@ -211,7 +213,7 @@ model Settings {
 
 model Park {
   id                   String     @id @default(cuid())
-  /// Subdomain, e.g. "ogbomoso" → ogbomoso.parktrack.ng. Reserved: www, app, admin, api.
+  /// Short name in the park's page address: parktrack.ng/parks/ogbomoso (Q45).
   slug                 String     @unique
   name                 String
   logoUrl              String?
@@ -312,11 +314,11 @@ model User {
   /// E.164, e.g. +2348035554471. Unique: one network-wide account per phone.
   phone         String              @unique
   name          String?
-  role          Role                @default(SENDER)
+  role          Role                @default(USER)
   photoUrl      String?
   /// Agents, drivers and park admins belong to exactly one park.
   parkId        String?
-  /// The park whose subdomain a sender first signed up on (AUTH-3).
+  /// No longer set (one domain, decision Q45); kept for accounts made before.
   signupParkId  String?
   language      Language            @default(EN)
   notifyChannel NotificationChannel @default(WHATSAPP)

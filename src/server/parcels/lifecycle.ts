@@ -130,7 +130,9 @@ export function actorProblem({
   if (actor === "SYSTEM" || actor === "RECIPIENT") return null;
 
   if (!user) return "Sign in to continue.";
-  if (user.status !== "ACTIVE" || user.role !== actor) {
+  // SENDER is whoever booked the parcel, whatever their role (Q45); every
+  // other person actor must hold that role.
+  if (user.status !== "ACTIVE" || (actor !== "SENDER" && user.role !== actor)) {
     return "You can't make this change to the parcel.";
   }
 

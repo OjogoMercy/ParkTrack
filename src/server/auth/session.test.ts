@@ -6,7 +6,6 @@ import {
   needsRefresh,
   readSessionToken,
   SESSION_COOKIE,
-  sessionCookieDomain,
   sessionCookieOptions,
 } from "./session";
 
@@ -60,14 +59,10 @@ describe("session token", () => {
 });
 
 describe("session cookie", () => {
-  it("is set on the root domain so every subdomain gets it", () => {
-    expect(sessionCookieDomain("parktrack.ng")).toBe("parktrack.ng");
-    expect(sessionCookieDomain("parktrack.localhost:3000")).toBe(
-      "parktrack.localhost",
-    );
-    // Browsers drop Domain=localhost cookies: fall back to host-only.
-    expect(sessionCookieDomain("localhost:3000")).toBeUndefined();
-    expect(sessionCookieDomain("127.0.0.1:3000")).toBeUndefined();
+  it("is host-only: everything is on one domain (Q45)", () => {
+    expect(
+      sessionCookieOptions("parktrack.ng", "production"),
+    ).not.toHaveProperty("domain");
   });
 
   it("is HTTP-only, lax, 30 days, and secure in production", () => {
@@ -77,7 +72,6 @@ describe("session cookie", () => {
       sameSite: "lax",
       path: "/",
       maxAge: 30 * 24 * 60 * 60,
-      domain: "parktrack.ng",
     });
     expect(sessionCookieOptions("localhost:3000", "development").secure).toBe(
       false,
@@ -97,19 +91,16 @@ describe("proxy rolling refresh", () => {
 
   async function visit(token: string) {
     const { proxy } = await import("@/proxy");
-    const request = new NextRequest(
-      "http://ogbomoso.parktrack.localhost:3000/",
-      {
-        headers: {
-          host: "ogbomoso.parktrack.localhost:3000",
-          cookie: `${SESSION_COOKIE}=${token}`,
-        },
+    const request = new NextRequest("http://parktrack.localhost:3000/", {
+      headers: {
+        host: "parktrack.localhost:3000",
+        cookie: `${SESSION_COOKIE}=${token}`,
       },
-    );
+    });
     return proxy(request);
   }
 
-  it("re-issues a day-old cookie on the root domain", async () => {
+  it("re-issues a day-old cookie", async () => {
     vi.useFakeTimers({ now: T0 });
     const token = await createSessionToken("user_1", SECRET);
     vi.setSystemTime(T0.getTime() + 2 * DAY);
@@ -117,10 +108,8 @@ describe("proxy rolling refresh", () => {
     const cookie = res.cookies.get(SESSION_COOKIE);
     expect(cookie?.value).toBeTruthy();
     expect(cookie?.value).not.toBe(token);
-    expect(cookie).toMatchObject({
-      domain: "parktrack.localhost",
-      httpOnly: true,
-    });
+    expect(cookie).toMatchObject({ httpOnly: true });
+    expect(cookie?.domain).toBeUndefined();
     expect(await readSessionToken(cookie!.value, SECRET)).toMatchObject({
       userId: "user_1",
     });
@@ -140,9 +129,12 @@ describe("proxy console guard", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  async function open(path: string, token?: string) {
+  async function open(
+    path: string,
+    token?: string,
+    host = "parktrack.localhost:3000",
+  ) {
     const { proxy } = await import("@/proxy");
-    const host = "app.parktrack.localhost:3000";
     return proxy(
       new NextRequest(`http://${host}${path}`, {
         headers: {
@@ -154,35 +146,45 @@ describe("proxy console guard", () => {
   }
 
   it("sends signed-out visitors to sign in, then back", async () => {
-    const res = await open("/counter/scan?x=1");
+    const res = await open("/console/counter/scan?x=1");
     expect(res.status).toBe(307);
     const to = new URL(res.headers.get("location")!);
     expect(to.pathname).toBe("/signin");
-    expect(to.searchParams.get("next")).toBe("/counter/scan?x=1");
+    expect(to.searchParams.get("next")).toBe("/console/counter/scan?x=1");
 
-    const home = new URL((await open("/")).headers.get("location")!);
-    expect(home.pathname + home.search).toBe("/signin");
-
-    const junk = await open("/counter", "junk");
+    const junk = await open("/console/counter", "junk");
     expect(junk.status).toBe(307);
   });
 
-  it("lets the sign-in page and signed-in staff through", async () => {
+  it("lets sign-in and signed-in staff through", async () => {
     expect((await open("/signin")).headers.get("location")).toBeNull();
     const token = await createSessionToken("user_1", SECRET);
-    const res = await open("/counter", token);
+    const res = await open("/console/counter", token);
     expect(res.headers.get("location")).toBeNull();
-    expect(res.headers.get("x-middleware-rewrite")).toContain(
-      "/console/counter",
-    );
   });
 
-  it("doesn't guard park pages", async () => {
-    const { proxy } = await import("@/proxy");
-    const host = "ogbomoso.parktrack.localhost:3000";
-    const res = await proxy(
-      new NextRequest(`http://${host}/send`, { headers: { host } }),
+  it("doesn't guard pages for everyone", async () => {
+    expect((await open("/send")).headers.get("location")).toBeNull();
+    expect((await open("/parks/ogbomoso")).headers.get("location")).toBeNull();
+  });
+
+  it("moves old subdomain addresses to the main domain for good", async () => {
+    const park = await open(
+      "/",
+      undefined,
+      "ogbomoso.parktrack.localhost:3000",
     );
-    expect(res.headers.get("location")).toBeNull();
+    expect(park.status).toBe(308);
+    expect(park.headers.get("location")).toBe(
+      "http://parktrack.localhost:3000/parks/ogbomoso",
+    );
+    const app = await open(
+      "/counter?x=1",
+      undefined,
+      "app.parktrack.localhost:3000",
+    );
+    expect(app.headers.get("location")).toBe(
+      "http://parktrack.localhost:3000/console/counter?x=1",
+    );
   });
 });

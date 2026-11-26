@@ -167,7 +167,7 @@ async function seedPeople(
   const tolu = await upsertUser(db, {
     phone: "+2340000000101",
     name: "Tolu Adeyemi",
-    role: "SENDER",
+    role: "USER",
     signupParkId: ogbomoso.id,
   });
   await db.vendorProfile.upsert({

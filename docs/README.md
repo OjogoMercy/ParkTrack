@@ -19,7 +19,7 @@ The build is split into **9 scopes**. Each scope lives on **its own branch** (`s
 | # | Branch | Scope | What it delivers | Design screens |
 |---|---|---|---|---|
 | 01 | `scope/01-foundation` | [Foundation & contracts](scopes/01-foundation.md) | Repo, design system, full DB schema + seed, frozen API/type contracts, service stubs, CI | Foundations |
-| 02 | `scope/02-identity` | [Parks, identity & access](scopes/02-parks-identity.md) | Subdomain routing, 6-digit phone sign-in, network-wide session, roles, signed recipient links | S02, S13, console sign-in |
+| 02 | `scope/02-identity` | [Parks, identity & access](scopes/02-parks-identity.md) | One-domain routing (Q45), 6-digit phone sign-in for everyone, session, roles, signed recipient links | S02, park list |
 | 03 | `scope/03-parcel-engine` | [Parcel engine & notifications](scopes/03-parcel-engine.md) | State machine, event log, fee quote, codes, storage dues, photo upload, WhatsApp/SMS | none (backend) |
 | 04 | `scope/04-payments` | [Payments & ledger](scopes/04-payments-ledger.md) | Interswitch Web Checkout, requery, webhook, retries, append-only ledger, settlement with the design's split | S05, S06, receipt |
 | 05 | `scope/05-sender` | [Sender app](scopes/05-sender-app.md) | Park home, one-page booking, review & pay, booking QR, my parcels, account & saved recipients | S01, S03, S04, S07, S08, S12 |
@@ -40,7 +40,7 @@ main ◄── 01 ◄── 02 ◄── 03 ◄── 04 ◄── 05 ◄── 
 
 ## Demo-critical path (never cut)
 
-The 5-minute demo (PRD §16.3): **book on `ogbomoso.parktrack.ng` (05) → pay in Interswitch sandbox with server requery (04) → agent scans booking QR, writes code, takes photo, recipient gets link (06, 03) → assign + driver Accept load + simulated map (06, 07) → manifest scan + tick-off (08) → counter QR, collection code, pay-on-delivery, release (08, 04) → ledger split (09).**
+The 5-minute demo (PRD §16.3): **book from Ogbomoso on `parktrack.ng` (05) → pay in Interswitch sandbox with server requery (04) → agent scans booking QR, writes code, takes photo, recipient gets link (06, 03) → assign + driver Accept load + simulated map (06, 07) → manifest scan + tick-off (08) → counter QR, collection code, pay-on-delivery, release (08, 04) → ledger split (09).**
 Every slice is marked **P0** (demo) or **P1** (pilot). Do every P0 slice in every scope before any P1 slice anywhere.
 
 ## Decisions so far

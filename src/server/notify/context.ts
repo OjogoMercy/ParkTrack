@@ -134,7 +134,6 @@ export async function loadMessageContext(
         : parcel.route.typicalMinutes,
     links: messageLinks({
       rootDomain,
-      originSlug: parcel.originPark.slug,
       parcelCode: parcel.parcelCode,
       recipientToken,
     }),

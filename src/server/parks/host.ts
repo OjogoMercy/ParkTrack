@@ -1,12 +1,14 @@
 import { ParkSlug, RESERVED_SLUGS } from "@/contracts/primitives";
 
 /**
- * Host → which part of the app serves it (PRD §5.3, Scope 02 routing model).
+ * Host → what kind of address it is. Since decision Q45 everything is served
+ * from the main domain; only the main domain (and www., IPs, previews) is
+ * served directly, and the old addresses redirect to it (routeRequest):
  *
- *   {slug}.parktrack.ng  /  {slug}.localhost:3000   → park pages  (/sites/{slug}/…)
- *   app.parktrack.ng     /  app.localhost:3000      → staff console (/console/…)
- *   parktrack.ng, www., anything else (IPs, previews) → public root (/, /t, /collect, /pay)
- *   reserved (admin, api) or malformed subdomains    → "park not found" (S13)
+ *   {slug}.parktrack.ng  /  {slug}.localhost:3000   → old park address
+ *   app.parktrack.ng     /  app.localhost:3000      → old console address
+ *   parktrack.ng, www., anything else (IPs, previews) → the app
+ *   reserved (admin, api) or malformed subdomains    → unknown
  *
  * Pure and dependency-free: src/proxy.ts imports it, so it must never pull in
  * the database or other server modules.
@@ -42,18 +44,25 @@ export function resolveHost(host: string, rootDomain: string): HostKind {
 
 export type RouteDecision =
   | { action: "next" }
-  | { action: "rewrite"; pathname: string }
-  | { action: "not_found" };
-
-/** Internal route trees that must only be reached through their own host. */
-const INTERNAL_PREFIXES = ["/sites", "/console", "/not-found-park"] as const;
-
-const startsWithSegment = (pathname: string, prefix: string) =>
-  pathname === prefix || pathname.startsWith(`${prefix}/`);
+  /**
+   * Send the browser to `pathname` (query kept). `toRoot`: on the main
+   * domain, because the request came in on an old subdomain.
+   */
+  | { action: "redirect"; pathname: string; toRoot: boolean };
 
 /**
- * What the proxy should do with a request. `pathname` excludes the query.
- * API routes and static assets never reach this (proxy matcher).
+ * What the proxy should do with a request (decision Q45: one domain).
+ * Everything is served from the main domain; the old addresses still work
+ * and redirect there:
+ *
+ *   ogbomoso.parktrack.ng/        → parktrack.ng/parks/ogbomoso
+ *   ogbomoso.parktrack.ng/send    → parktrack.ng/send
+ *   app.parktrack.ng/counter      → parktrack.ng/console/counter
+ *   admin.parktrack.ng/… (unknown)→ parktrack.ng/
+ *   parktrack.ng/console/signin   → parktrack.ng/signin (one sign-in)
+ *
+ * `pathname` excludes the query. API routes and static assets never reach
+ * this (proxy matcher).
  */
 export function routeRequest(
   host: string,
@@ -61,39 +70,43 @@ export function routeRequest(
   rootDomain: string,
 ): RouteDecision {
   const target = resolveHost(host, rootDomain);
-  const internal = INTERNAL_PREFIXES.some((p) =>
-    startsWithSegment(pathname, p),
-  );
   const suffix = pathname === "/" ? "" : pathname;
 
   switch (target.kind) {
     case "root":
-      // parktrack.ng/sites/ogbomoso would duplicate the park page; hide internals.
-      return internal ? { action: "not_found" } : { action: "next" };
+      if (startsWithSegment(pathname, "/console/signin"))
+        return { action: "redirect", pathname: "/signin", toRoot: false };
+      return { action: "next" };
     case "console":
-      if (startsWithSegment(pathname, "/console"))
-        return { action: "rewrite", pathname };
-      return internal
-        ? { action: "not_found" }
-        : { action: "rewrite", pathname: `/console${suffix}` };
+      return {
+        action: "redirect",
+        pathname: startsWithSegment(pathname, "/console")
+          ? pathname
+          : pathname === "/signin"
+            ? "/signin"
+            : `/console${suffix}`,
+        toRoot: true,
+      };
     case "park":
-      return internal
-        ? { action: "not_found" }
-        : { action: "rewrite", pathname: `/sites/${target.slug}${suffix}` };
+      return {
+        action: "redirect",
+        pathname: pathname === "/" ? parkPath(target.slug) : pathname,
+        toRoot: true,
+      };
     case "unknown":
-      return { action: "rewrite", pathname: "/not-found-park" };
+      return { action: "redirect", pathname: "/", toRoot: true };
   }
 }
 
-/** Absolute URL of a park's home page, e.g. "https://ogbomoso.parktrack.ng". */
-export function parkUrl(slug: string, rootDomain: string): string {
-  const local =
-    /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(rootDomain) ||
-    rootDomain.endsWith(".localhost");
-  return `${local ? "http" : "https"}://${slug}.${rootDomain}`;
+const startsWithSegment = (pathname: string, prefix: string) =>
+  pathname === prefix || pathname.startsWith(`${prefix}/`);
+
+/** A park's page on the main domain: "/parks/ogbomoso". */
+export function parkPath(slug: string): string {
+  return `/parks/${slug}`;
 }
 
-/** Display form of a park host: "ogbomoso.parktrack.ng" (no port, no scheme). */
-export function parkHostLabel(slug: string, rootDomain: string): string {
-  return `${slug}.${hostnameOf(rootDomain)}`;
+/** Display form of a park's page: "parktrack.ng/parks/ogbomoso" (no scheme, no port). */
+export function parkAddressLabel(slug: string, rootDomain: string): string {
+  return `${hostnameOf(rootDomain)}${parkPath(slug)}`;
 }

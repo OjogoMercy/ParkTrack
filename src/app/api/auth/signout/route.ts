@@ -1,7 +1,7 @@
 import { AuthSignout } from "@/contracts/api";
 import { errorResponse, signOut } from "@/server/auth";
 
-/** POST /api/auth/signout — clears the session cookie on every subdomain. */
+/** POST /api/auth/signout — clears the session cookie. */
 export async function POST(): Promise<Response> {
   try {
     await signOut();

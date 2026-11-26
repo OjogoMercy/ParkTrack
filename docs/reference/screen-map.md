@@ -1,5 +1,7 @@
 # Design screen map
 
+> **One domain since [Q45](open-questions.md):** every route below is on `parktrack.ng`. Sender pages that were on `{park}.parktrack.ng` are now on the main domain (the park is picked in the app); console routes keep their `/console/…` paths, now on the main domain too. S13 is replaced by the park list on an unknown `/parks/{slug}`.
+
 Every screen in the 7 ParkTrack UI v2 files, the scope that builds it, and its route. Mobile screens are designed at 390 px; admin screens at desktop width.
 
 Design files live in [`docs/design/`](../design/) (open in a browser): `ParkTrack UI Foundations.html`, `ParkTrack UI Senderv2.html`, `ParkTrack UI recipient.html`, `ParkTrack UI Origin agent.html`, `ParkTrack UI Driver.html`, `ParkTrack UI Arrival agent.html`, `ParkTrack UI park and platform admin.html`. The PRD is [`docs/ParkTrack_PRD_v1.1.pdf`](../ParkTrack_PRD_v1.1.pdf).
@@ -8,15 +10,15 @@ Design files live in [`docs/design/`](../design/) (open in a browser): `ParkTrac
 
 `ParkTrack UI Foundations.html` is the **rulebook** every screen follows: principles, type scale, colour tokens, radius/spacing, buttons, forms, toggles, lists/timeline/notices. It is **not a screen** in the product and gets no route. Scope 01 turns it into tokens (`src/app/globals.css`) and components (`src/components/ui/`). The screens themselves come from the six role files below.
 
-## Sender (Senderv2) — host `{park}.parktrack.ng`
+## Sender (Senderv2) — `parktrack.ng`
 
 | ID | Screen | Scope | Route |
 |---|---|---|---|
-| S01 | Park home | 05 | `/` |
+| S01 | Park home | 05 | `/parks/[slug]` (home `/` lists parks) |
 | S02 | Sign in with phone code | 02 | `/signin` |
 | S03 | New parcel (one page, interactive) | 05 | `/send` |
 | S04 | Review and pay | 05 | `/send/review` |
-| S05 | Confirming payment | 04 | `parktrack.ng/pay/[ref]` |
+| S05 | Confirming payment | 04 | `/pay/[ref]` |
 | S06 | Payment failed | 04 | `parktrack.ng/pay/[ref]` (failed state) |
 | S07 | Booked: show QR at the counter | 05 | `/parcels/booked/[code]` |
 | S08 | My parcels (signed in) | 05 | `/parcels` |
@@ -24,7 +26,7 @@ Design files live in [`docs/design/`](../design/) (open in a browser): `ParkTrac
 | S10 | Parcel: in transit with live map | 07 | `/parcels/[code]` |
 | S11 | Parcel: collected, proof of delivery | 07 | `/parcels/[code]` |
 | S12 | Account and saved recipients | 05 | `/account` |
-| S13 | Park not found (unknown subdomain) | 02 | any unknown subdomain |
+| S13 | Park not found | 02 | unknown `/parks/[slug]` (lists parks; replaced by Q45) |
 
 ## Recipient — host `parktrack.ng`, no account (signed link)
 
@@ -37,11 +39,11 @@ Design files live in [`docs/design/`](../design/) (open in a browser): `ParkTrac
 | R05 | At the counter: read code to agent | 08 | `/collect/[parkToken]` |
 | R06 | Collected: receipt | 08 | `/collect/[parkToken]` (done state) |
 
-## Origin agent — host `app.parktrack.ng`
+## Origin agent — `parktrack.ng/console`
 
 | ID | Screen | Scope | Route |
 |---|---|---|---|
-| — | Staff sign-in (S02 layout, all console roles; then each role's home, Q29) | 02 | `/console/signin` (browser: `app.parktrack.ng/signin`) |
+| — | Sign-in (S02, one for everyone since Q45; staff then go to their role's home, Q29) | 02 | `/signin` |
 | A01 | Counter: today | 06 | `/console/counter` |
 | A02 | Scan sender QR | 06 | `/console/counter/scan` |
 | A03 | Check in: size, write code, photo | 06 | `/console/counter/check-in/[publicId]` |
@@ -50,7 +52,7 @@ Design files live in [`docs/design/`](../design/) (open in a browser): `ParkTrac
 | A06 | Assign parcels to a driver | 06 | `/console/counter/assign` |
 | A07 | Loads: waiting for driver to accept | 06 | `/console/counter/loads` |
 
-## Driver — host `app.parktrack.ng`
+## Driver — `parktrack.ng/console`
 
 | ID | Screen | Scope | Route |
 |---|---|---|---|
@@ -61,7 +63,7 @@ Design files live in [`docs/design/`](../design/) (open in a browser): `ParkTrac
 | D05 | Manifest QR at arrival | 07 | `/console/driver/manifest` |
 | D06 | Earnings | 07 | `/console/driver/earnings` |
 
-## Arrival agent — host `app.parktrack.ng`
+## Arrival agent — `parktrack.ng/console`
 
 | ID | Screen | Scope | Route |
 |---|---|---|---|
@@ -71,7 +73,7 @@ Design files live in [`docs/design/`](../design/) (open in a browser): `ParkTrac
 | V04 | Release with code | 08 | `/console/arrivals/release/[code]` |
 | V05 | Code locked after 5 tries | 08 | `/console/arrivals/locked/[code]` |
 
-## Park admin and platform admin — host `app.parktrack.ng`
+## Park admin and platform admin — `parktrack.ng/console`
 
 | ID | Screen | Scope | Route |
 |---|---|---|---|

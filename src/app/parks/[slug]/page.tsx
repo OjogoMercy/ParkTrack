@@ -5,20 +5,20 @@ import {
   ParkHeader,
   ParkHeaderSkeleton,
 } from "@/features/identity/park-header";
-import { getPark } from "@/server/parks";
+import { ParkNotFound } from "@/features/identity/park-not-found";
+import { getPark, parkStatusBySlug } from "@/server/parks";
 
 /**
- * PLACEHOLDER park home, so routing and the park header can be checked before
- * Scope 05 builds the real S01. Scope 05 replaces this file.
+ * A park's page: parktrack.ng/parks/{slug} (Q45; was {slug}.parktrack.ng,
+ * which now redirects here). PLACEHOLDER until Scope 05 moves the real S01
+ * park home here.
  *
  * Pattern for park pages under Cache Components: the page renders
  * synchronously and reads `params` inside its own <Suspense>, so navigation
  * stays instant. Park data comes from the cached getPark(); "open now" is a
  * client component.
  */
-export default function ParkHomePlaceholder({
-  params,
-}: PageProps<"/sites/[park]">) {
+export default function ParkPage({ params }: PageProps<"/parks/[slug]">) {
   return (
     <Suspense
       fallback={
@@ -32,10 +32,18 @@ export default function ParkHomePlaceholder({
   );
 }
 
-async function ParkHome({ params }: { params: Promise<{ park: string }> }) {
-  const { park } = await params;
-  const data = await getPark(park);
-  if (!data) return null; // the layout shows "park not found"
+async function ParkHome({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const data = await getPark(slug);
+  if (!data) {
+    const park = await parkStatusBySlug(slug).catch(() => null);
+    return (
+      <ParkNotFound
+        slug={slug}
+        pausedPark={park && park.status !== "LIVE" ? park.name : undefined}
+      />
+    );
+  }
   return (
     <MobileShell
       topBar={<ParkHeader park={data} />}

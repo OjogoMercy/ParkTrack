@@ -66,8 +66,10 @@ export const AuthSignout = {
   response: Ok,
 };
 
+/** GET /api/park?slug=ogbomoso — one park's public page data (Q45: by slug, not by host). */
 export const GetPark = {
   route: { method: "GET", path: "/api/park" } satisfies Route,
+  query: z.object({ slug: ParkSlug }),
   response: D.ParkPublic,
 };
 

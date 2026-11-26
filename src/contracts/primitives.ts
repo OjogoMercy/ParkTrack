@@ -58,7 +58,7 @@ export type SixDigitCode = z.infer<typeof SixDigitCode>;
 export const TxnRef = z.string().regex(/^ISW-[A-Z0-9-]{4,40}$/);
 export type TxnRef = z.infer<typeof TxnRef>;
 
-/** Park subdomain slug. Reserved names are rejected (PARK-3). */
+/** Park short name in its page address, parktrack.ng/parks/{slug} (Q45). Reserved names are rejected (PARK-3). */
 export const RESERVED_SLUGS = ["www", "app", "admin", "api"] as const;
 export const ParkSlug = z
   .string()

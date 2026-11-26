@@ -5,11 +5,14 @@ import type { ParcelStatus, Role } from "./enums";
  * allowed; every transition writes a parcel_events row (Scope 03 transition()).
  * FROZEN: changing this table is a contract change (WORKFLOW §7).
  *
- * Actors are roles plus two non-role actors:
+ * Actors are staff roles plus three non-role actors:
+ *   SENDER    — the account that booked this parcel (parcels.sender_id).
+ *               Any signed-in person can send; it's a relationship, not a
+ *               role (Q45)
  *   SYSTEM    — payment verification, scheduled jobs, settlement
  *   RECIPIENT — acting through a signed tracking link (no account)
  */
-export type Actor = Role | "SYSTEM" | "RECIPIENT";
+export type Actor = Exclude<Role, "USER"> | "SENDER" | "SYSTEM" | "RECIPIENT";
 
 export type Transition = {
   from: ParcelStatus;

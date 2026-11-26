@@ -8,9 +8,11 @@
 | Design source | Senderv2 **S01** park home, **S03** new parcel (one page), **S04** review and pay, **S07** booked QR, **S08** my parcels, **S12** account & saved recipients |
 | PRD | §5.2, §6.1 steps 1–2, BOOK-1 … BOOK-5, BOOK-8 (P1), HS-1 (display), DASH-3, AUTH-3 (display) |
 
+> **One domain since [Q45](../reference/open-questions.md):** routes below are on `parktrack.ng`; there are no park subdomains and no `app.` host. Console routes keep their `/console/…` paths.
+
 ## Goal
 
-A sender opens their park's subdomain, sees routes and fares, books a parcel on **one page** with their own details prefilled and a saved recipient picked from chips, pays through Interswitch, and gets a booking QR + write-on code + drop-off deadline. Vendors see what they've collected on delivery.
+Anyone signs up on `parktrack.ng`, picks the park they send from, sees routes and fares, books a parcel on **one page** with their own details prefilled and a saved recipient picked from chips, pays through Interswitch, and gets a booking QR + write-on code + drop-off deadline. Vendors see what they've collected on delivery.
 
 ## Owned paths
 
@@ -24,7 +26,7 @@ src/features/sender/**
 
 ## Routes
 
-| Route (on `{park}.parktrack.ng`) | Screen |
+| Route (on `parktrack.ng`; S01 at `/parks/[slug]`, the rest in `src/app/(sender)/`) | Screen |
 |---|---|
 | `/` | S01 park home: open/closed, "Send a parcel from {park}", quick estimator (destination + size → total), routes list with "from ₦", Good-to-know block (48 h drop-off, 24 h free storage then ₦300/day, one-time code, Interswitch) |
 | `/send` | S03 one page: sending-as (prefilled, Edit), destination park, delivery segmented control (Collect at park / Roadside drop + drop point select), recipient chips (saved + New person) with name/phone, item category, short description, size cards with prices, declared value, POD toggle + amount (≤ ₦200,000), live total "Fare ₦X + ₦150 fee", Review |
@@ -58,7 +60,7 @@ Signed-out users can browse `/`; `/send` and beyond redirect to `/signin?next=` 
 | sl6 | P0 | S08 my parcels with tabs, badges, vendor totals | Seeded parcels appear in the right tabs with design badges |
 | sl7 | P1 | Vendor profile fields + business toggle | Vendor strip only shows for vendors |
 | sl8 | P1 | Prohibited categories blocked in the category list (BOOK-8); Drafts tab "Pay now" resumes payment within 24 h | Prohibited category cannot be submitted |
-| sl9 | P0 | Wire-up: rebase on `main`; run book → pay against real 03/04 | Fresh user books and pays on `ogbomoso.localhost` |
+| sl9 | P0 | Wire-up: rebase on `main`; run book → pay against real 03/04 | Fresh user books from Ogbomoso and pays on `localhost:3000` |
 
 ## Out of scope
 

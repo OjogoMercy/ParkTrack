@@ -11,7 +11,7 @@ import { AuthError } from "./errors";
  *                        Ibadan agent never sees a parcel that doesn't touch
  *                        Ibadan
  *   DRIVER               only parcels loaded on their own trips
- *   SENDER               only parcels they sent
+ *   USER                 only parcels they sent
  *
  * Staff without a park (a broken account) see nothing: the rules fail closed.
  *
@@ -59,7 +59,7 @@ export function parkScope(user: SessionUser): Prisma.ParcelWhereInput {
       };
     case "DRIVER":
       return { tripParcels: { some: { trip: { driverId: user.id } } } };
-    case "SENDER":
+    case "USER":
       return { senderId: user.id };
     default:
       return NOTHING;
@@ -90,7 +90,7 @@ export function canSeeParcel(
       );
     case "DRIVER":
       return parcel.driverIds.includes(user.id);
-    case "SENDER":
+    case "USER":
       return parcel.senderId !== null && parcel.senderId === user.id;
     default:
       return false;

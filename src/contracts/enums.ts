@@ -6,9 +6,13 @@ import { z } from "zod";
  * FROZEN: add values only at the end, through a contract/* PR.
  */
 
-/** A vendor is a SENDER with a vendor profile, not a separate role. */
+/**
+ * Every person is a USER: sending or receiving is what they do with a
+ * parcel, not a role (Q45). A vendor is a USER with a vendor profile. Staff
+ * roles belong to one park.
+ */
 export const ROLES = [
-  "SENDER",
+  "USER",
   "AGENT",
   "DRIVER",
   "PARK_ADMIN",

@@ -46,8 +46,8 @@ const users = {
   ibadanAdmin: user("u_ibd_admin", "PARK_ADMIN", IBD),
   musaDriver: user("u_musa", "DRIVER", OGB),
   otherDriver: user("u_other_driver", "DRIVER", OGB),
-  tolu: user("u_tolu", "SENDER"),
-  ada: user("u_ada", "SENDER"),
+  tolu: user("u_tolu", "USER"),
+  ada: user("u_ada", "USER"),
   platform: user("u_platform", "PLATFORM_ADMIN"),
   agentWithoutPark: user("u_broken", "AGENT", null),
 };

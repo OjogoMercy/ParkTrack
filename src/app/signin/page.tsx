@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { MobileShell, TopBar } from "@/components/ui/shells";
-import { safeNext } from "@/features/identity/redirects";
+import { consoleHome, safeNext } from "@/features/identity/redirects";
 import { SignInForm } from "@/features/identity/sign-in-form";
 import { getSession } from "@/server/auth";
 
@@ -12,36 +12,36 @@ export const metadata: Metadata = {
 };
 
 /**
- * S02 — sender sign-in on a park subdomain: {park}.parktrack.ng/signin.
- * `?next=/send` returns there afterwards. Someone already signed in goes
- * straight to `next`. The search params and session are request data, so
+ * S02 sign-in: parktrack.ng/signin. One sign-in for everyone (Q45): a new
+ * phone gets an account; staff go to their console afterwards, everyone
+ * else to `?next=` (on-site paths only) or home. Someone already signed in
+ * goes straight there. The search params and session are request data, so
  * they're read inside <Suspense>; the shell renders instantly.
  */
-export default function ParkSignInPage({
-  searchParams,
-}: PageProps<"/sites/[park]/signin">) {
+export default function SignInPage({ searchParams }: PageProps<"/signin">) {
   return (
     <MobileShell topBar={<TopBar backHref="/" />} className="gap-0 p-0">
       <Suspense fallback={<SignInSkeleton />}>
-        <ParkSignIn searchParams={searchParams} />
+        <SignIn searchParams={searchParams} />
       </Suspense>
     </MobileShell>
   );
 }
 
-async function ParkSignIn({
+async function SignIn({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const next = safeNext((await searchParams).next);
-  if (await getSession()) redirect(next ?? "/");
+  const user = await getSession();
+  if (user) redirect(next ?? consoleHome(user.role) ?? "/");
   return (
     <SignInForm
       title={next?.startsWith("/send") ? "Sign in to book" : "Sign in"}
       intro="No password. We send a 6-digit code to your phone by WhatsApp, or SMS if WhatsApp isn’t available."
       next={next}
-      footnote="Your account works on every ParkTrack park, not just this one."
+      footnote="One account for sending and receiving, at every ParkTrack park."
     />
   );
 }

@@ -11,8 +11,8 @@ export const metadata: Metadata = {
 
 /**
  * Any address that doesn't match a page (a mistyped link, or a screen that
- * isn't built yet). Unknown park subdomains get S13 instead
- * (src/app/sites/not-found.tsx, /not-found-park).
+ * isn't built yet). An unknown park address (/parks/{slug}) lists the parks
+ * instead (src/app/parks/[slug]/page.tsx).
  */
 export default function NotFound() {
   return (
