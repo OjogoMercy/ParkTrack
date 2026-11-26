@@ -134,9 +134,9 @@ describe("service stubs", () => {
       }),
     );
 
-    // trips.driverLoadFor is real since Scope 07 sl1 (needs a database);
-    // its grouping is tested in src/server/trips/load.test.ts.
-    valid(D.DriverLoad, await trips.acceptLoad("t", "d"));
+    // trips.driverLoadFor (sl1) and acceptLoad (sl2) are real since Scope
+    // 07 and need a database; grouping is tested in
+    // src/server/trips/load.test.ts.
     valid(
       A.RoadsideAction.response,
       await roadside.handover("p", "715204", "d"),

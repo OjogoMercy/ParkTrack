@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import { Button } from "@/components/ui/button";
 import { MobileShell, TopBar } from "@/components/ui/shells";
+import { AcceptButton } from "@/features/driver/accept-button";
 import { LoadView } from "@/features/driver/load-view";
 import { getSession } from "@/server/auth";
 import { driverLoadFor } from "@/server/trips";
@@ -39,9 +39,7 @@ async function DriverLoad() {
       load={load}
       driverName={user.name ?? user.phone}
       accept={
-        <Button size="lg" block disabled>
-          Accept load · {count} {count === 1 ? "parcel" : "parcels"}
-        </Button>
+        load.trip ? <AcceptButton tripId={load.trip.id} count={count} /> : null
       }
     />
   );
