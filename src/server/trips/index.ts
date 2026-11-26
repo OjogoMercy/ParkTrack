@@ -1,18 +1,102 @@
 /**
- * STUB (Scope 01) — owned by Scope 07 (docs/scopes/07-driver-tracking.md).
- * Exported names and types are FINAL. Scope 07 replaces the bodies;
- * callers never change. Until then everything returns fixture data.
+ * Trips (Scope 07): the driver's load, accepting it, location and the demo
+ * trip player. Replaces the Scope 01 stub; exported names are unchanged.
+ * acceptLoad, recordLocation and simulate are still the stub until their
+ * slices (sl2, sl4) land.
  */
+import "server-only";
 import type { DriverLoad } from "@/contracts/dto";
+import { db } from "@/lib/db";
 import { driverLoad, MANIFEST_TOKEN } from "@/mocks/fixtures";
 import { stub } from "@/mocks/stub";
+import { buildLoad, type LoadTripRow } from "./load";
 
-export const STUB = true;
+export const STUB = false;
 
-/** D01/D02/D05: the driver's current load in route order. */
+const PARK = { select: { id: true, slug: true, name: true, city: true } };
+
+/**
+ * D01/D02/D05: the driver's current load in route order. The current trip
+ * is the one on the road, else the newest one being loaded; a trip whose
+ * parcels were all moved back to the counter doesn't count.
+ */
 export async function driverLoadFor(driverId: string): Promise<DriverLoad> {
-  void driverId;
-  return stub(driverLoad);
+  const trips = await db.trip.findMany({
+    where: { driverId, status: { in: ["LOADING", "IN_TRANSIT"] } },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+    select: {
+      id: true,
+      status: true,
+      vehiclePlate: true,
+      scheduledDepartureAt: true,
+      acceptedAt: true,
+      departedAt: true,
+      destinationParkId: true,
+      originPark: PARK,
+      destinationPark: PARK,
+      route: {
+        select: {
+          typicalMinutes: true,
+          roadsidePoints: {
+            select: {
+              id: true,
+              name: true,
+              order: true,
+              minutesFromOrigin: true,
+            },
+          },
+        },
+      },
+      parcels: {
+        select: {
+          assignedAt: true,
+          assignedBy: { select: { name: true } },
+          parcel: {
+            select: {
+              id: true,
+              parcelCode: true,
+              sizeClass: true,
+              category: true,
+              recipientName: true,
+              status: true,
+              deliveryMode: true,
+              roadsidePointId: true,
+              podAmountKobo: true,
+              podPaidAt: true,
+            },
+          },
+        },
+      },
+      manifests: { select: { token: true, destinationParkId: true } },
+    },
+  });
+  // On the road first, then the newest being loaded.
+  trips.sort(
+    (a, b) =>
+      Number(b.status === "IN_TRANSIT") - Number(a.status === "IN_TRANSIT"),
+  );
+  for (const t of trips) {
+    const row: LoadTripRow = {
+      ...t,
+      parcels: t.parcels.map((p) => ({
+        assignedAt: p.assignedAt,
+        assignedByName: firstName(p.assignedBy.name ?? "the counter"),
+        parcel: p.parcel,
+      })),
+      manifest:
+        t.manifests.find((m) => m.destinationParkId === t.destinationParkId) ??
+        null,
+    };
+    const load = buildLoad(row);
+    if (load.trip) return load;
+  }
+  return buildLoad(null);
+}
+
+/** "Bayo Kareem" → "Bayo", as the designs name agents to drivers. */
+function firstName(name: string): string {
+  return name.trim().split(/\s+/)[0] || name;
 }
 
 /** Accept load: all ASSIGNED → IN_TRANSIT, manifests created (DRV-4). */
